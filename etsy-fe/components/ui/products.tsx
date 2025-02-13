@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { parse } from "csv-parse"
 import {
   ColumnDef,
@@ -22,10 +22,13 @@ import { Progress } from "@/components/ui/progress"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { API_URL } from "@/lib/config"
-import { Upload } from "lucide-react"
+import { Upload, Download } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import ExpandableText from "./expandableText"
 import SettingsDropdown from "./settings"
+import Filters from "./filters"
+import { HistoryPopup } from "./history-popup"
+import { Badge } from "@/components/ui/badge"
 
 interface Product {
   time_scraped: string
@@ -70,6 +73,47 @@ interface Product {
 }
 
 const BATCH_SIZE = 5 // Number of rows to process at once
+interface HistoryData {
+  time_added: string;
+  [key: string]: any;
+}
+const createHistoryCell = (key: string, formatter?: (value: any) => string) => ({
+  cell: ({ row }: { row: any }) => {
+    const [showHistory, setShowHistory] = useState(false);
+    const [historyData, setHistoryData] = useState<HistoryData[]>([]);
+
+    const handleClick = async () => {
+      const response = await fetch(
+        `${API_URL}/product-history/${row.getValue("product_id")}/${key}`
+      );
+      const data = await response.json();
+      setHistoryData(data);
+      setShowHistory(true);
+    };
+
+    const value = row.getValue(key);
+    const displayValue = formatter ? formatter(value) : (value ?? "N/A");
+
+    return (
+      <>
+        <Badge
+          onClick={handleClick}
+          className="hover:underline cursor-pointer"
+        >
+          {displayValue}
+        </Badge>
+        <HistoryPopup
+          isOpen={showHistory}
+          onClose={() => setShowHistory(false)}
+    //@ts-ignore
+
+          data={historyData}
+          fieldName={key}
+        />
+      </>
+    );
+  },
+});
 
 // Define columns
 const columns: ColumnDef<Product>[] = [
@@ -164,12 +208,12 @@ const columns: ColumnDef<Product>[] = [
   {
     accessorKey: "last_24_hours",
     header: "Last 24 Hours",
-    cell: ({ row }) => row.getValue("last_24_hours") ?? "N/A",
+    ...createHistoryCell("last_24_hours")
   },
   {
     accessorKey: "number_in_basket",
     header: "In Basket",
-    cell: ({ row }) => row.getValue("number_in_basket") ?? "N/A",
+    ...createHistoryCell("number_in_basket")
   },
   {
     accessorKey: "product_reviews",
@@ -358,18 +402,23 @@ export default function Product() {
   const [totalRows, setTotalRows] = useState(0)
   const [processedRows, setProcessedRows] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
+  const [filters, setFilters] = useState({})
 
   // Add state for pagination
   const [{ pageIndex, pageSize }, setPagination] = useState({
     pageIndex: 0,
-    pageSize: 10, // Number of rows per page
+    pageSize: 10,
   })
 
   const { toast } = useToast()
 
-  // Fetch data function
-  const fetchData = async (start: number, size: number) => {
+  // Add new state for total filtered count
+  const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
+
+  // Update fetchData function to set total filtered count
+  const fetchData = async (start: number, size: number, currentFilters = filters) => {
     try {
+      setIsLoading(true);
       const response = await fetch(`${API_URL}/get-rows`, {
         method: 'POST',
         headers: {
@@ -379,35 +428,42 @@ export default function Product() {
           table: 'products',
           start,
           count: size,
+          filters: currentFilters,
         }),
-      })
-      if (!response.ok) throw new Error('Failed to fetch data')
-      const { data, totalCount } = await response.json()
-      setTotalRows(totalCount)
-      return data
+      });
+      
+      if (!response.ok) throw new Error('Failed to fetch data');
+      
+      const { data, totalCount } = await response.json();
+      setTotalRows(totalCount);
+      setTotalFilteredCount(totalCount); // Set the filtered count
+      setProducts(data);
+      setIsLoading(false);
+      return data;
     } catch (error) {
-      console.error('Error fetching data:', error)
-      return []
+      console.error('Error fetching data:', error);
+      setIsLoading(false);
+      return [];
     }
   }
 
   // Initial data fetch
   useEffect(() => {
-    const loadInitialData = async () => {
-      setIsLoading(true)
-      const initialData = await fetchData(0, pageSize)
-      setProducts(initialData)
-      setIsLoading(false)
-    }
-    loadInitialData()
-  }, [])
+    fetchData(0, pageSize);
+  }, [pageSize]);
+
+  // Handle filter changes
+  const handleFilterChange = useCallback(async (newFilters: any) => {
+    setFilters(newFilters);
+    await fetchData(0, pageSize, newFilters); // Immediately fetch with new filters
+    setPagination(prev => ({ ...prev, pageIndex: 0 })); // Reset to first page
+  }, [pageSize]);
 
   const table = useReactTable({
     data: products,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    // Add manual pagination
     manualPagination: true,
     pageCount: Math.ceil(totalRows / pageSize),
     state: {
@@ -421,15 +477,8 @@ export default function Product() {
 
   // Handle page changes
   useEffect(() => {
-    const loadPageData = async () => {
-      setIsLoading(true)
-      const start = pageIndex * pageSize
-      const newData = await fetchData(start, pageSize)
-      setProducts(newData)
-      setIsLoading(false)
-    }
-    loadPageData()
-  }, [pageIndex, pageSize])
+    fetchData(pageIndex * pageSize, pageSize);
+  }, [pageIndex, pageSize]);
 
   const validateCSVColumns = (headers: string[]): boolean => {
     const requiredColumns = [
@@ -589,14 +638,112 @@ export default function Product() {
     }
   }
 
+  // Add export function
+  const handleExport = async () => {
+    try {
+      const response = await fetch(`${API_URL}/export-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          table: 'products',
+          filters: filters,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Export failed');
+
+      const data = await response.json();
+      
+      if (data.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Export Failed",
+          description: "No data to export",
+        });
+        return;
+      }
+
+      // Get field names from the first data object
+      const fields = Object.keys(data[0]).filter(key => key !== 'id'); // Exclude the id field
+      const headers = fields.join(',');
+
+      const rows = data.map((row: any) => 
+        fields
+          .map(field => {
+            const value = row[field];
+            // Handle different value types
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'string') return `"${value.replace(/"/g, '""')}"`;
+            if (Array.isArray(value)) return `"${value.join(', ')}"`;
+            if (typeof value === 'boolean') return value ? 'true' : 'false';
+            if (value instanceof Date) return value.toISOString();
+            return value;
+          })
+          .join(',')
+      );
+
+      const csv = [headers, ...rows].join('\n');
+
+      // Create and download file
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `products_export_${new Date().toISOString()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Export Successful",
+        description: `${data.length} rows exported to CSV`,
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        variant: "destructive",
+        title: "Export Failed",
+        description: "Failed to export data to CSV",
+      });
+    }
+  };
+
   return (
     <div className="container">
-      <div className="flex justify-end mb-4">
+       <div className="flex justify-between mb-4">
+      <h1 className="text-[2rem] font-bold" style={{fontSize: "2rem"}}>Products</h1>
+
         <SettingsDropdown />
       </div>
-      <Card>
+      <Filters 
+        type="products" 
+        onFilterChange={handleFilterChange}
+        totalFilteredCount={totalFilteredCount}
+        handleExport={handleExport}
+        isLoading={isLoading}
+      />
+      {/* <Card>
         <CardHeader>
-          <CardTitle>Products</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Products</CardTitle>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                {totalFilteredCount} results found
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExport}
+                disabled={isLoading}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export to CSV
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {isUploading && (
@@ -617,7 +764,7 @@ export default function Product() {
             
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
       <Card className="mt-5">
         

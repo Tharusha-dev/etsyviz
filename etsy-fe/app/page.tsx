@@ -6,9 +6,10 @@ import Products from "@/components/ui/products";
 import Categories from "@/components/ui/categories";
 import Stores from "@/components/ui/stores";
 import Users from "@/components/ui/users";
-import { getCookie, hasCookie } from "cookies-next/client";
+import { getCookie, hasCookie, deleteCookie } from "cookies-next/client";
 import { useRouter } from "next/navigation";
 import { API_URL } from "@/lib/config";
+import Uploads from "@/components/ui/uploads";
 
 export default function Home() {
   const router = useRouter();
@@ -25,6 +26,13 @@ export default function Home() {
     });
 
     const data = await res.json();
+
+    if (data?.relogin) {
+      deleteCookie("userToken");
+
+      router.push("/login");
+    }
+
     if (data?.length > 0) {
       setUser(data[0]);
 
@@ -50,6 +58,7 @@ export default function Home() {
         {activeTab === "products" && user && (user as any)?.prodaccess && <Products />}
         {activeTab === "categories" && user && (user as any)?.prodandstoreaccess && <Categories />}
         {activeTab === "stores" && user && (user as any)?.storeaccess && <Stores />}
+       {activeTab === "uploads" && <Uploads />}
         {isAdmin && <>{activeTab === "users" && <Users />}</>}
       </main>
     </div>

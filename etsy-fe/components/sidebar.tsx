@@ -13,6 +13,7 @@ export default function Sidebar({ activeTab, setActiveTab, user }: SidebarProps)
     { id: "categories", label: "Categories", icon: Package, access: user?.prodandstoreaccess },
     { id: "stores", label: "Stores", icon: Store, access: user?.storeaccess },
     { id: "users", label: "Users", icon: Users, access: user?.is_admin },
+    { id: "uploads", label: "Uploads", icon: Package, access: true },
     // { id: 'whatsapp', label: 'Whatsapp', icon: Globe },
   ];
 

@@ -116,10 +116,18 @@ app.get(
 
     // res.json(decodedToken);
     //get the user from the database
-    const user = await sql`
-      SELECT * FROM users WHERE id = ${decodedToken?.id}
-    `;
-    res.json(user);
+try {
+  const user = await sql`
+  SELECT * FROM users WHERE id = ${decodedToken?.id}
+`;
+res.json(user);
+} catch (error) {
+  logger(`Error getting user: ${error.message}`);
+  res.json({ relogin: true });
+  // throw { status: 500, message: "Failed to get user", error: error.message };
+}
+
+
 
     // if (decodedToken?.isAdmin == undefined || decodedToken?.isAdmin == null) {
     //   res.json({ isAdmin: null, relogin: true });
@@ -405,27 +413,176 @@ app.post("/add-category-batch", asyncHandler(async (req, res) => {
   }
 }));
 
+// app.post("/get-rows", asyncHandler(async (req, res) => {
+
+//   const { table, start, count } = req.body;
+
+//   if(['products', 'stores', 'categories'].includes(table)) {
+//     // Create the queries using the validated table name directly
+//     const query = `SELECT * FROM ${table} LIMIT $1 OFFSET $2`;
+//     const countQuery = `SELECT COUNT(*) FROM ${table}`;
+
+//     const [result, totalCount] = await Promise.all([
+//       sql.unsafe(query, [count, start]),
+//       sql.unsafe(countQuery)
+//     ]);
+    
+//     res.json({
+//       data: result,
+//       totalCount: totalCount[0].count
+//     });
+//   } else {
+//     throw { status: 400, message: "Invalid table name" };
+//   }
+// }));
+
+
+// ... existing code ...
+
 app.post("/get-rows", asyncHandler(async (req, res) => {
-  const { table, start, count } = req.body;
+  const { table, start, count, filters } = req.body;
 
   if(['products', 'stores', 'categories'].includes(table)) {
-    // Create the queries using the validated table name directly
-    const query = `SELECT * FROM ${table} LIMIT $1 OFFSET $2`;
-    const countQuery = `SELECT COUNT(*) FROM ${table}`;
+    let whereClause = [];
+    let params = [];
+    let paramIndex = 1;
 
-    const [result, totalCount] = await Promise.all([
-      sql.unsafe(query, [count, start]),
-      sql.unsafe(countQuery)
-    ]);
-    
-    res.json({
-      data: result,
-      totalCount: totalCount[0].count
-    });
+    if (filters) {
+      // Date filters
+      const dateFields = {
+        products: ['time_scraped', 'date_of_latest_review', 'date_listed', 'on_etsy_since'],
+        stores: ['store_last_updated', 'on_etsy_since']
+      };
+
+      if (dateFields[table]) {
+        dateFields[table].forEach(field => {
+          if (filters[`${field}_from`]) {
+            whereClause.push(`${field} >= $${paramIndex}`);
+            params.push(new Date(filters[`${field}_from`]));
+            paramIndex++;
+          }
+          if (filters[`${field}_to`]) {
+            whereClause.push(`${field} <= $${paramIndex}`);
+            params.push(new Date(filters[`${field}_to`]));
+            paramIndex++;
+          }
+        });
+      }
+
+      // Numeric range filters
+      const numericFields = {
+        products: [
+          'last_24_hours', 'number_in_basket', 'product_reviews', 'ratingvalue',
+          'number_of_favourties', 'price_usd', 'sale_price_usd', 'store_reviews',
+          'store_sales', 'store_admirers', 'number_of_store_products'
+        ],
+        stores: [
+          'store_reviews', 'store_review_score', 'store_sales',
+          'store_admirers', 'number_of_store_products'
+        ]
+      };
+
+      if (numericFields[table]) {
+        numericFields[table].forEach(field => {
+          if (filters[`${field}_from`]) {
+            whereClause.push(`${field} >= $${paramIndex}`);
+            params.push(Number(filters[`${field}_from`]));
+            paramIndex++;
+          }
+          if (filters[`${field}_to`]) {
+            whereClause.push(`${field} <= $${paramIndex}`);
+            params.push(Number(filters[`${field}_to`]));
+            paramIndex++;
+          }
+        });
+      }
+
+      // String filters
+      if (filters.store_country) {
+        whereClause.push(`store_country ILIKE $${paramIndex}`);
+        params.push(filters.store_country);
+        paramIndex++;
+      }
+
+      if (filters.category) {
+        whereClause.push(`category_name ILIKE $${paramIndex}`);
+        params.push(filters.category);
+        paramIndex++;
+      }
+
+      if (filters.brand) {
+        whereClause.push(`brand ILIKE $${paramIndex}`);
+        params.push(filters.brand);
+        paramIndex++;
+      }
+
+      // Boolean filters
+      if (filters.star_seller !== undefined) {
+        whereClause.push(`star_seller = $${paramIndex}`);
+        params.push(filters.star_seller);
+        paramIndex++;
+      }
+
+      if (filters.ad !== undefined) {
+        whereClause.push(`ad = $${paramIndex}`);
+        params.push(filters.ad);
+        paramIndex++;
+      }
+
+      if (filters.digital_download !== undefined) {
+        whereClause.push(`digital_download = $${paramIndex}`);
+        params.push(filters.digital_download);
+        paramIndex++;
+      }
+      if (filters.jsonSearch && filters.jsonSearch !== '' && filters.jsonSearch !== ' ') {
+
+        if(table === 'products') {  
+          console.log("products search");
+          whereClause.push(`(
+            product_title ILIKE $${paramIndex} 
+          )`);
+        }else {
+          console.log("stores search");
+          whereClause.push(`(
+            welcome_to_our_shop_text ILIKE $${paramIndex} OR 
+            store_description ILIKE $${paramIndex}
+          )`);
+        }
+  
+      
+        params.push(`%${filters.jsonSearch}%`);
+        paramIndex++;
+      }
+    }
+
+    // Add LIMIT and OFFSET parameters last
+    params.push(count);
+    params.push(start);
+
+    const whereString = whereClause.length > 0 ? `WHERE ${whereClause.join(' AND ')}` : '';
+    const query = `SELECT * FROM ${table} ${whereString} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    const countQuery = `SELECT COUNT(*) FROM ${table} ${whereString}`;
+
+    try {
+      const [result, totalCount] = await Promise.all([
+        sql.unsafe(query, params),
+        sql.unsafe(countQuery, params.slice(0, -2)) // Remove LIMIT and OFFSET params
+      ]);
+      
+      res.json({
+        data: result,
+        totalCount: totalCount[0].count
+      });
+    } catch (error) {
+      console.error('Query error:', error);
+      throw { status: 500, message: "Database query error", error: error.message };
+    }
   } else {
     throw { status: 400, message: "Invalid table name" };
   }
 }));
+
+
 
 // Get all users
 app.get("/users", asyncHandler(async (req, res) => {
@@ -534,6 +691,242 @@ async function addUserToDb(data) {
   }
 }
 
+// Add new endpoint to get filter options
+app.get("/filter-options/:table", asyncHandler(async (req, res) => {
+  const { table } = req.params;
+
+  if (!['products', 'stores'].includes(table)) {
+    throw { status: 400, message: "Invalid table name" };
+  }
+
+  const options = {
+    countries: await sql`SELECT DISTINCT store_country FROM ${sql(table)} WHERE store_country IS NOT NULL ORDER BY store_country`,
+    categories: table === 'products' ? await sql`SELECT DISTINCT category_name FROM products WHERE category_name IS NOT NULL ORDER BY category_name` : [],
+    brands: table === 'products' ? await sql`SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL ORDER BY brand` : []
+  };
+
+  res.json(options);
+}));
+
+// Get upload history
+app.get("/upload-history", asyncHandler(async (req, res) => {
+  const history = await sql`
+    SELECT * FROM upload_history 
+    ORDER BY time_added DESC 
+    LIMIT 100
+  `;
+  res.json(history);
+}));
+
+// Add upload history entry
+app.post("/upload-history", asyncHandler(async (req, res) => {
+  const { file_type, rows_processed, status, error_message = null } = req.body;
+  
+  const result = await sql`
+    INSERT INTO upload_history (
+      file_type, 
+      rows_processed, 
+      status, 
+      error_message
+    ) VALUES (
+      ${file_type}, 
+      ${rows_processed}, 
+      ${status}, 
+      ${error_message}
+    ) RETURNING *
+  `;
+  
+  res.json(result[0]);
+}));
+
+// Get field history for a product
+app.get("/product-history/:productId/:field", asyncHandler(async (req, res) => {
+  const { productId, field } = req.params;
+  
+  // Validate field to prevent SQL injection
+  const allowedFields = [
+    'last_24_hours',
+    'number_in_basket',
+    'product_reviews',
+    'ratingvalue',
+    'number_of_favourties',
+    'price_usd',
+    'sale_price_usd',
+    'store_reviews'
+  ];
+
+  if (!allowedFields.includes(field)) {
+    throw { status: 400, message: "Invalid field name" };
+  }
+
+  const history = await sql`
+    SELECT ${sql(field)}, time_added
+    FROM products
+    WHERE product_id = ${productId}
+    ORDER BY time_added DESC
+  `;
+
+  res.json(history);
+}));
+
+// Update the store history endpoint to use store_name
+app.get("/store-history/:storeName/:field", asyncHandler(async (req, res) => {
+  const { storeName, field } = req.params;
+  
+  // Validate field to prevent SQL injection
+  const allowedFields = [
+    'store_reviews',
+    'store_review_score',
+    'store_sales',
+    'store_admirers',
+    'number_of_store_products'
+  ];
+
+  if (!allowedFields.includes(field)) {
+    throw { status: 400, message: "Invalid field name" };
+  }
+
+  const history = await sql`
+    SELECT ${sql(field)}, time_added
+    FROM stores
+    WHERE store_name = ${decodeURIComponent(storeName)}
+    ORDER BY time_added DESC
+  `;
+
+  res.json(history);
+}));
+
+// Add new export endpoint
+app.post("/export-data", asyncHandler(async (req, res) => {
+  const { table, filters } = req.body;
+
+  if (!['products', 'stores'].includes(table)) {
+    throw { status: 400, message: "Invalid table name" };
+  }
+
+  let whereClause = [];
+  let params = [];
+  let paramIndex = 1;
+
+  if (filters) {
+    // Date filters
+    const dateFields = {
+      products: ['time_scraped', 'date_of_latest_review', 'date_listed', 'on_etsy_since'],
+      stores: ['store_last_updated', 'on_etsy_since']
+    };
+
+    if (dateFields[table]) {
+      dateFields[table].forEach(field => {
+        if (filters[`${field}_from`]) {
+          whereClause.push(`${field} >= $${paramIndex}`);
+          params.push(new Date(filters[`${field}_from`]));
+          paramIndex++;
+        }
+        if (filters[`${field}_to`]) {
+          whereClause.push(`${field} <= $${paramIndex}`);
+          params.push(new Date(filters[`${field}_to`]));
+          paramIndex++;
+        }
+      });
+    }
+
+    // Numeric range filters
+    const numericFields = {
+      products: [
+        'last_24_hours', 'number_in_basket', 'product_reviews', 'ratingvalue',
+        'number_of_favourties', 'price_usd', 'sale_price_usd', 'store_reviews',
+        'store_sales', 'store_admirers', 'number_of_store_products'
+      ],
+      stores: [
+        'store_reviews', 'store_review_score', 'store_sales',
+        'store_admirers', 'number_of_store_products'
+      ]
+    };
+
+    if (numericFields[table]) {
+      numericFields[table].forEach(field => {
+        if (filters[`${field}_from`]) {
+          whereClause.push(`${field} >= $${paramIndex}`);
+          params.push(Number(filters[`${field}_from`]));
+          paramIndex++;
+        }
+        if (filters[`${field}_to`]) {
+          whereClause.push(`${field} <= $${paramIndex}`);
+          params.push(Number(filters[`${field}_to`]));
+          paramIndex++;
+        }
+      });
+    }
+
+    // String filters
+    if (filters.store_country) {
+      whereClause.push(`store_country ILIKE $${paramIndex}`);
+      params.push(filters.store_country);
+      paramIndex++;
+    }
+
+    if (filters.category) {
+      whereClause.push(`category_name ILIKE $${paramIndex}`);
+      params.push(filters.category);
+      paramIndex++;
+    }
+
+    if (filters.brand) {
+      whereClause.push(`brand ILIKE $${paramIndex}`);
+      params.push(filters.brand);
+      paramIndex++;
+    }
+
+    // Boolean filters
+    if (filters.star_seller !== undefined) {
+      whereClause.push(`star_seller = $${paramIndex}`);
+      params.push(filters.star_seller);
+      paramIndex++;
+    }
+
+    if (filters.ad !== undefined) {
+      whereClause.push(`ad = $${paramIndex}`);
+      params.push(filters.ad);
+      paramIndex++;
+    }
+
+    if (filters.digital_download !== undefined) {
+      whereClause.push(`digital_download = $${paramIndex}`);
+      params.push(filters.digital_download);
+      paramIndex++;
+    }
+    if (filters.jsonSearch && filters.jsonSearch !== '' && filters.jsonSearch !== ' ') {
+
+      if(table === 'products') {  
+        console.log("products search");
+        whereClause.push(`(
+          product_title ILIKE $${paramIndex} 
+        )`);
+      }else {
+        console.log("stores search");
+        whereClause.push(`(
+          welcome_to_our_shop_text ILIKE $${paramIndex} OR 
+          store_description ILIKE $${paramIndex}
+        )`);
+      }
+
+    
+      params.push(`%${filters.jsonSearch}%`);
+      paramIndex++;
+    }
+  }
+
+  const whereString = whereClause.length > 0 ? `WHERE ${whereClause.join(' AND ')}` : '';
+  const query = `SELECT * FROM ${table} ${whereString}`;
+
+  try {
+    const result = await sql.unsafe(query, params);
+    res.json(result);
+  } catch (error) {
+    console.error('Export query error:', error);
+    throw { status: 500, message: "Database query error", error: error.message };
+  }
+}));
 
 console.log("server running on port 8000");
 // server.listen(8000);

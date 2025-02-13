@@ -372,10 +372,12 @@ export default function Categories() {
 
   return (
     <div className="container">
-           <div className="flex justify-end mb-4">
+          <div className="flex justify-between mb-4">
+      <h1 className="text-[2rem] font-bold" style={{fontSize: "2rem"}}>Categories</h1>
+
         <SettingsDropdown />
       </div>
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>Categories</CardTitle>
         </CardHeader>
@@ -398,7 +400,7 @@ export default function Categories() {
           
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
       <Card className="mt-5">
     
