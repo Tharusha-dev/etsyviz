@@ -194,12 +194,19 @@ app.post("/add-product-batch", asyncHandler(async (req, res) => {
       facebook_url: cleanProduct.facebook_url || null,
       instagram_url: cleanProduct.instagram_url || null,
       pinterest_url: cleanProduct.pinterest_url || null,
-      tiktok_url: cleanProduct.tiktok_url || null
+      tiktok_url: cleanProduct.tiktok_url || null,
+      time_added: new Date()
     };
 
     return transformed;
   });
-  console.log(transformedProducts);
+  // console.log(transformedProducts);
+
+  for (const product of transformedProducts) {
+    if (product.category_tree) {
+      await processCategoryTree(product.category_tree);
+    }
+  }
 
   try {
     const result = await sql`
@@ -242,7 +249,8 @@ app.post("/add-product-batch", asyncHandler(async (req, res) => {
         'facebook_url',
         'instagram_url',
         'pinterest_url',
-        'tiktok_url'
+        'tiktok_url',
+        'time_added'
       )}
       RETURNING id
     `;
@@ -300,7 +308,8 @@ app.post("/add-store-batch", asyncHandler(async (req, res) => {
       facebook_url: cleanStore.facebook_url || null,
       instagram_url: cleanStore.instagram_url || null,
       pinterest_url: cleanStore.pinterest_url || null,
-      tiktok_url: cleanStore.tiktok_url || null
+      tiktok_url: cleanStore.tiktok_url || null,
+      time_added: new Date()
     };
 
     return transformed;
@@ -330,7 +339,8 @@ app.post("/add-store-batch", asyncHandler(async (req, res) => {
         'facebook_url',
         'instagram_url',
         'pinterest_url',
-        'tiktok_url'
+        'tiktok_url',
+        'time_added'
       )}
       RETURNING store_id
     `;
@@ -369,7 +379,7 @@ app.post("/add-category-batch", asyncHandler(async (req, res) => {
     const transformed = {
       product_id: cleanCategory.product_id || null,
       search_url: cleanCategory.search_url || null,
-      category_tree: Array.isArray(cleanCategory.category_tree) ? cleanCategory.category_tree : [],
+      category_tree: cleanCategory.category_tree,
       product_url: cleanCategory.product_url || null,
       product_name: cleanCategory.product_name || null,
       is_ad: cleanCategory.is_ad === 'Y' || cleanCategory.is_ad === true,
@@ -377,7 +387,8 @@ app.post("/add-category-batch", asyncHandler(async (req, res) => {
       store_reviews_number: cleanCategory.store_reviews_number ? parseInt(cleanCategory.store_reviews_number) : null,
       store_reviews_score: cleanCategory.store_reviews_score ? parseInt(cleanCategory.store_reviews_score) : null,
       store_name: cleanCategory.store_name || null,
-      store_url: cleanCategory.store_url || null
+      store_url: cleanCategory.store_url || null,
+      time_added: new Date()
     };
 
     return transformed;
@@ -396,7 +407,8 @@ app.post("/add-category-batch", asyncHandler(async (req, res) => {
         'store_reviews_number',
         'store_reviews_score',
         'store_name',
-        'store_url'
+        'store_url',
+        'time_added'
       )}
       RETURNING id
     `;
@@ -442,7 +454,7 @@ app.post("/add-category-batch", asyncHandler(async (req, res) => {
 app.post("/get-rows", asyncHandler(async (req, res) => {
   const { table, start, count, filters } = req.body;
 
-  if(['products', 'stores', 'categories'].includes(table)) {
+  if(['products', 'stores','categories'].includes(table)) {
     let whereClause = [];
     let params = [];
     let paramIndex = 1;
@@ -473,8 +485,7 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
       const numericFields = {
         products: [
           'last_24_hours', 'number_in_basket', 'product_reviews', 'ratingvalue',
-          'number_of_favourties', 'price_usd', 'sale_price_usd', 'store_reviews',
-          'store_sales', 'store_admirers', 'number_of_store_products'
+          'price_usd', 'sale_price_usd'
         ],
         stores: [
           'store_reviews', 'store_review_score', 'store_sales',
@@ -504,69 +515,86 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
         paramIndex++;
       }
 
-      if (filters.category) {
-        whereClause.push(`category_name ILIKE $${paramIndex}`);
-        params.push(filters.category);
+      // Update the category filter to be exact match
+      if (filters.category_name) {
+        whereClause.push(`category_name = $${paramIndex}`);
+        params.push(filters.category_name);
         paramIndex++;
       }
 
-      if (filters.brand) {
-        whereClause.push(`brand ILIKE $${paramIndex}`);
-        params.push(filters.brand);
+      // Multiple select filters
+      if (filters.categories && Array.isArray(filters.categories)) {
+        whereClause.push(`category_name = ANY($${paramIndex})`);
+        params.push(filters.categories);
+        paramIndex++;
+      }
+
+      if (filters.brands && Array.isArray(filters.brands)) {
+        whereClause.push(`brand = ANY($${paramIndex})`);
+        params.push(filters.brands);
         paramIndex++;
       }
 
       // Boolean filters
-      if (filters.star_seller !== undefined) {
-        whereClause.push(`star_seller = $${paramIndex}`);
-        params.push(filters.star_seller);
-        paramIndex++;
+      const booleanFields = {
+        products: ['ad', 'digital_download', 'star_seller'],
+        stores: ['star_seller']
+      };
+
+      if (booleanFields[table]) {
+        booleanFields[table].forEach(field => {
+          if (filters[field] !== undefined) {
+            whereClause.push(`${field} = $${paramIndex}`);
+            params.push(filters[field]);
+            paramIndex++;
+          }
+        });
       }
 
-      if (filters.ad !== undefined) {
-        whereClause.push(`ad = $${paramIndex}`);
-        params.push(filters.ad);
-        paramIndex++;
-      }
-
-      if (filters.digital_download !== undefined) {
-        whereClause.push(`digital_download = $${paramIndex}`);
-        params.push(filters.digital_download);
-        paramIndex++;
-      }
       if (filters.jsonSearch && filters.jsonSearch !== '' && filters.jsonSearch !== ' ') {
-
         if(table === 'products') {  
-          console.log("products search");
           whereClause.push(`(
             product_title ILIKE $${paramIndex} 
           )`);
-        }else {
-          console.log("stores search");
+        } else {
           whereClause.push(`(
             welcome_to_our_shop_text ILIKE $${paramIndex} OR 
-            store_description ILIKE $${paramIndex}
+            store_description ILIKE $${paramIndex} OR
+            store_name ILIKE $${paramIndex}
+
           )`);
         }
-  
-      
         params.push(`%${filters.jsonSearch}%`);
         paramIndex++;
       }
     }
 
-    // Add LIMIT and OFFSET parameters last
+    // Add LIMIT and OFFSET parameters
     params.push(count);
     params.push(start);
 
     const whereString = whereClause.length > 0 ? `WHERE ${whereClause.join(' AND ')}` : '';
-    const query = `SELECT * FROM ${table} ${whereString} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    let query;
+    if (table === 'products') {
+      // Modified query to join with stores table
+      query = `
+        SELECT 
+          p.*,
+          s.*
+        FROM products p
+        LEFT JOIN stores s ON p.store_name = s.store_name
+        ${whereString}
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+    } else {
+      query = `SELECT * FROM ${table} ${whereString} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    }
     const countQuery = `SELECT COUNT(*) FROM ${table} ${whereString}`;
 
     try {
       const [result, totalCount] = await Promise.all([
         sql.unsafe(query, params),
-        sql.unsafe(countQuery, params.slice(0, -2)) // Remove LIMIT and OFFSET params
+        sql.unsafe(countQuery, params.slice(0, -2))
       ]);
       
       res.json({
@@ -744,20 +772,20 @@ app.get("/product-history/:productId/:field", asyncHandler(async (req, res) => {
   const { productId, field } = req.params;
   
   // Validate field to prevent SQL injection
-  const allowedFields = [
-    'last_24_hours',
-    'number_in_basket',
-    'product_reviews',
-    'ratingvalue',
-    'number_of_favourties',
-    'price_usd',
-    'sale_price_usd',
-    'store_reviews'
-  ];
+  // const allowedFields = [
+  //   'last_24_hours',
+  //   'number_in_basket',
+  //   'product_reviews',
+  //   'ratingvalue',
+  //   'number_of_favourties',
+  //   'price_usd',
+  //   'sale_price_usd',
+  //   'store_reviews'
+  // ];
 
-  if (!allowedFields.includes(field)) {
-    throw { status: 400, message: "Invalid field name" };
-  }
+  // if (!allowedFields.includes(field)) {
+  //   throw { status: 400, message: "Invalid field name" };
+  // }
 
   const history = await sql`
     SELECT ${sql(field)}, time_added
@@ -909,8 +937,8 @@ app.post("/export-data", asyncHandler(async (req, res) => {
           store_description ILIKE $${paramIndex}
         )`);
       }
-
-    
+  
+      
       params.push(`%${filters.jsonSearch}%`);
       paramIndex++;
     }
@@ -928,7 +956,62 @@ app.post("/export-data", asyncHandler(async (req, res) => {
   }
 }));
 
-console.log("server running on port 8000");
+// Add new function to process category tree
+async function processCategoryTree(categoryTree) {
+  // Split the tree into individual categories
+  const categories = categoryTree
+    .replace(/[<>]/g, '>') // Convert all separators to '>'
+    .split('>')
+    .map(c => c.trim())
+    .filter(Boolean);
+
+  let parentId = null;
+  let level = 0;
+
+  // Process each category in the tree
+  for (const category of categories) {
+    try {
+      // Try to find existing category at this level with this parent
+      let existingCategory = await sql`
+        SELECT id FROM category_hierarchy 
+        WHERE category_name = ${category} 
+        AND COALESCE(parent_id, 0) = COALESCE(${parentId}, 0)
+        AND level = ${level}
+      `;
+
+      if (existingCategory.length === 0) {
+        // Category doesn't exist at this level, create it
+        existingCategory = await sql`
+          INSERT INTO category_hierarchy (category_name, parent_id, level)
+          VALUES (${category}, ${parentId}, ${level})
+          RETURNING id
+        `;
+      }
+
+      parentId = existingCategory[0].id;
+      level++;
+    } catch (error) {
+      console.error('Error processing category:', error);
+      throw error;
+    }
+  }
+}
+
+// Add new endpoint to get category hierarchy
+app.get("/category-hierarchy/:parentId?", asyncHandler(async (req, res) => {
+  const { parentId } = req.params;
+  
+  const categories = await sql`
+    SELECT id, category_name, level
+    FROM category_hierarchy
+    WHERE COALESCE(parent_id, 0) = COALESCE(${parentId ? parseInt(parentId) : null}, 0)
+    ORDER BY category_name
+  `;
+  
+  res.json(categories);
+}));
+
+console.log("server running on port 3000");
 // server.listen(8000);
 app.listen(8000);
 

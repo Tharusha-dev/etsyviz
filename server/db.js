@@ -2,11 +2,11 @@
 import postgres from "postgres";
 
 const sql = postgres({
-  host: "localhost", // Postgres ip address[s] or domain name[s]
-  port: 5432, // Postgres server port[s]
-  database: "etsyviz", // Name of database to connect to
-  username: "etsyviz", // Username of database user
-  password: "yTr97M8UTVBep0Q",
-}); // will use psql environment variables
+  host: process.env.PGHOST || "localhost",  // Use 'postgres' for Docker, 'localhost' for local
+  port: process.env.PGPORT || 5432,
+  database: process.env.PGDATABASE || "etsyviz",
+  username: process.env.PGUSER || "etsyviz",
+  password: process.env.PGPASSWORD || "yTr97M8UTVBep0Q",
+});
 
 export default sql;

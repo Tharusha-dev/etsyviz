@@ -118,32 +118,10 @@ const createHistoryCell = (key: string, formatter?: (value: any) => string) => (
 // Define columns
 const columns: ColumnDef<Product>[] = [
   {
-    accessorKey: "time_scraped",
-    header: "Time Scraped",
-  },
-  {
-    accessorKey: "cid",
-    header: "CID",
-  },
-  {
-    accessorKey: "pjson",
-    header: "Product JSON",
+    accessorKey: "product_title",
+    header: "Product Title",
     cell: ({ row }) => (
-      <ExpandableText text={row.getValue("pjson")} />
-    ),
-  },
-  {
-    accessorKey: "productJ",
-    header: "Product J",
-    cell: ({ row }) => (
-      <ExpandableText text={row.getValue("productJ")} />
-    ),
-  },
-  {
-    accessorKey: "breadcrumbJ",
-    header: "Breadcrumb",
-    cell: ({ row }) => (
-      <ExpandableText text={row.getValue("breadcrumbJ")} />
+      <ExpandableText text={row.getValue("product_title")} />
     ),
   },
   {
@@ -160,6 +138,16 @@ const columns: ColumnDef<Product>[] = [
   {
     accessorKey: "category_url",
     header: "Category URL",
+    cell: ({ row }) => (
+      <a 
+        href={row.getValue("category_url")} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:underline"
+      >
+        Link
+      </a>
+    ),
   },
   {
     accessorKey: "product_url",
@@ -179,17 +167,7 @@ const columns: ColumnDef<Product>[] = [
     accessorKey: "product_id",
     header: "Product ID",
   },
-  {
-    accessorKey: "product_id_new",
-    header: "New Product ID",
-  },
-  {
-    accessorKey: "product_title",
-    header: "Product Title",
-    cell: ({ row }) => (
-      <ExpandableText text={row.getValue("product_title")} />
-    ),
-  },
+
   {
     accessorKey: "brand",
     header: "Brand",
@@ -218,12 +196,17 @@ const columns: ColumnDef<Product>[] = [
   {
     accessorKey: "product_reviews",
     header: "Reviews",
-    cell: ({ row }) => row.getValue("product_reviews") ?? "N/A",
+    // cell: ({ row }) => row.getValue("product_reviews") ?? "N/A",
+    ...createHistoryCell("product_reviews")
+
   },
   {
     accessorKey: "ratingValue",
     header: "Rating",
-    cell: ({ row }) => row.getValue("ratingValue") ?? "N/A",
+    // cell: ({ row }) => row.getValue("ratingValue") ?? "N/A",
+    ...createHistoryCell("ratingValue")
+
+    
   },
   {
     accessorKey: "date_of_latest_review",
@@ -236,7 +219,9 @@ const columns: ColumnDef<Product>[] = [
   {
     accessorKey: "number_of_favourties",
     header: "Favorites",
-    cell: ({ row }) => row.getValue("number_of_favourties") ?? "N/A",
+    // cell: ({ row }) => row.getValue("number_of_favourties") ?? "N/A",
+    ...createHistoryCell("number_of_favourties")
+
   },
   {
     accessorKey: "related_searches",
@@ -260,29 +245,35 @@ const columns: ColumnDef<Product>[] = [
   {
     accessorKey: "price_usd",
     header: "Price (USD)",
-    cell: ({ row }) => {
-      const price = row.getValue("price_usd")
-      return price ? new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD'
-      }).format(price as number) : "N/A"
-    },
+    // cell: ({ row }) => {
+    //   const price = row.getValue("price_usd")
+    //   return price ? new Intl.NumberFormat('en-US', {
+    //     style: 'currency',
+    //     currency: 'USD'
+    //   }).format(price as number) : "N/A"
+    // },
+    ...createHistoryCell("price_usd")
+    
   },
   {
     accessorKey: "sale_price_usd",
     header: "Sale Price (USD)",
-    cell: ({ row }) => {
-      const price = row.getValue("sale_price_usd")
-      return price ? new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD'
-      }).format(price as number) : "N/A"
-    },
+    // cell: ({ row }) => {
+    //   const price = row.getValue("sale_price_usd")
+    //   return price ? new Intl.NumberFormat('en-US', {
+    //     style: 'currency',
+    //     currency: 'USD'
+    //   }).format(price as number) : "N/A"
+    // },
+    ...createHistoryCell("sale_price_usd")
+
   },
   {
     accessorKey: "store_reviews",
     header: "Store Reviews",
-    cell: ({ row }) => row.getValue("store_reviews") ?? "N/A",
+    // cell: ({ row }) => row.getValue("store_reviews") ?? "N/A",
+    ...createHistoryCell("store_reviews")
+
   },
   {
     accessorKey: "store_name",
@@ -314,85 +305,91 @@ const columns: ColumnDef<Product>[] = [
     accessorKey: "store_sales",
     header: "Store Sales",
     cell: ({ row }) => row.getValue("store_sales") ?? "N/A",
+    // ...createHistoryCell("store_sales")
+
   },
   {
     accessorKey: "store_admirers",
     header: "Store Admirers",
     cell: ({ row }) => row.getValue("store_admirers") ?? "N/A",
+    // ...createHistoryCell("store_admirers")
+
   },
   {
     accessorKey: "number_of_store_products",
     header: "Store Products",
     cell: ({ row }) => row.getValue("number_of_store_products") ?? "N/A",
+    // ...createHistoryCell("number_of_store_products")
+
   },
-  {
-    accessorKey: "facebook_url",
-    header: "Facebook",
-    cell: ({ row }) => {
-      const url = row.getValue("facebook_url")
-      return url ? (
-        <a 
-          href={url as string} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
-        >
-          Link
-        </a>
-      ) : "N/A"
-    },
-  },
-  {
-    accessorKey: "instagram_url",
-    header: "Instagram",
-    cell: ({ row }) => {
-      const url = row.getValue("instagram_url")
-      return url ? (
-        <a 
-          href={url as string} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
-        >
-          Link
-        </a>
-      ) : "N/A"
-    },
-  },
-  {
-    accessorKey: "pinterest_url",
-    header: "Pinterest",
-    cell: ({ row }) => {
-      const url = row.getValue("pinterest_url")
-      return url ? (
-        <a 
-          href={url as string} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
-        >
-          Link
-        </a>
-      ) : "N/A"
-    },
-  },
-  {
-    accessorKey: "tiktok_url",
-    header: "TikTok",
-    cell: ({ row }) => {
-      const url = row.getValue("tiktok_url")
-      return url ? (
-        <a 
-          href={url as string} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
-        >
-          Link
-        </a>
-      ) : "N/A"
-    },
-  },
+  // {
+  //   accessorKey: "facebook_url",
+  //   header: "Facebook",
+  //   cell: ({ row }) => {
+  //     const url = row.getValue("facebook_url")
+  //     return url ? (
+  //       <a 
+  //         href={url as string} 
+  //         target="_blank" 
+  //         rel="noopener noreferrer"
+  //         className="text-blue-600 hover:underline"
+  //       >
+  //         Link
+  //       </a>
+  //     ) : "N/A"
+  //   },
+  // },
+  // {
+  //   accessorKey: "instagram_url",
+  //   header: "Instagram",
+  //   cell: ({ row }) => {
+  //     const url = row.getValue("instagram_url")
+  //     return url ? (
+  //       <a 
+  //         href={url as string} 
+  //         target="_blank" 
+  //         rel="noopener noreferrer"
+  //         className="text-blue-600 hover:underline"
+  //       >
+  //         Link
+  //       </a>
+  //     ) : "N/A"
+  //   },
+  // },
+  // {
+  //   accessorKey: "pinterest_url",
+  //   header: "Pinterest",
+  //   cell: ({ row }) => {
+  //     const url = row.getValue("pinterest_url")
+  //     return url ? (
+  //       <a 
+  //         href={url as string} 
+  //         target="_blank" 
+  //         rel="noopener noreferrer"
+  //         className="text-blue-600 hover:underline"
+  //       >
+  //         Link
+  //       </a>
+  //     ) : "N/A"
+  //   },
+  // },
+  // {
+  //   accessorKey: "tiktok_url",
+  //   header: "TikTok",
+  //   cell: ({ row }) => {
+  //     const url = row.getValue("tiktok_url")
+  //     return url ? (
+  //       <a 
+  //         href={url as string} 
+  //         target="_blank" 
+  //         rel="noopener noreferrer"
+  //         className="text-blue-600 hover:underline"
+  //       >
+  //         Link
+  //       </a>
+  //     ) : "N/A"
+  //   },
+  // },
 ]
 
 export default function Product() {
@@ -482,17 +479,12 @@ export default function Product() {
 
   const validateCSVColumns = (headers: string[]): boolean => {
     const requiredColumns = [
-      "time_scraped",
-      "cid",
-      "pjson",
-      "productJ",
-      "breadcrumbJ",
+      "product_name",
       "category_name",
       "category_tree",
       "category_url",
       "product_url",
       "product_id",
-      "product_id_new",
       "product_title",
       // ... add other required columns
     ]
@@ -666,7 +658,7 @@ export default function Product() {
       }
 
       // Get field names from the first data object
-      const fields = Object.keys(data[0]).filter(key => key !== 'id'); // Exclude the id field
+      const fields = Object.keys(data[0]).filter(key => !["time_scraped", "cid", "pjson", "productj","breadcrumbj"].includes(key)); // Exclude the id field
       const headers = fields.join(',');
 
       const rows = data.map((row: any) => 

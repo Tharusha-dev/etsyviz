@@ -8,15 +8,23 @@ CREATE TABLE IF NOT EXISTS users (
     prodaccess BOOLEAN,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    name VARCHAR(255) NOT NULL
+    name VARCHAR(255) NOT NULL,
+    time_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
+CREATE TABLE IF NOT EXISTS upload_history (
+    id SERIAL PRIMARY KEY,
+    file_type VARCHAR(50) NOT NULL,  -- 'products', 'stores', 'categories'
+    rows_processed INTEGER NOT NULL,
+    time_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(50) NOT NULL,     -- 'success', 'failed', 'partial'
+    error_message TEXT
+);
 -- Categories Table
 CREATE TABLE IF NOT EXISTS categories (
     id SERIAL PRIMARY KEY,
     product_id TEXT,
     search_url TEXT,
-    category_tree TEXT[],
+    category_tree TEXT,
     product_url TEXT,
     product_name TEXT,
     is_ad BOOLEAN,
@@ -24,7 +32,8 @@ CREATE TABLE IF NOT EXISTS categories (
     store_reviews_number INTEGER,
     store_reviews_score INTEGER,
     store_name TEXT,
-    store_url TEXT
+    store_url TEXT,
+    time_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Stores Table
@@ -51,7 +60,8 @@ CREATE TABLE IF NOT EXISTS stores (
     facebook_url TEXT,
     instagram_url TEXT,
     pinterest_url TEXT,
-    tiktok_url TEXT
+    tiktok_url TEXT,
+    time_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Products Table
@@ -95,5 +105,16 @@ CREATE TABLE IF NOT EXISTS products (
     facebook_url TEXT,
     instagram_url TEXT,
     pinterest_url TEXT,
-    tiktok_url TEXT
+    tiktok_url TEXT,
+    time_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Add Categories Hierarchy Table
+CREATE TABLE IF NOT EXISTS category_hierarchy (
+    id SERIAL PRIMARY KEY,
+    category_name TEXT NOT NULL,
+    parent_id INTEGER REFERENCES category_hierarchy(id),
+    level INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(category_name, parent_id)
 );

@@ -101,10 +101,7 @@ const createHistoryCell = (key: string, formatter?: (value: any) => string) => (
 
 // Define columns
 const columns: ColumnDef<Store>[] = [
-  {
-    accessorKey: "store_id",
-    header: "Store ID",
-  },
+
   {
     accessorKey: "store_name",
     header: "Store Name",

@@ -63,7 +63,7 @@ export default function Uploads() {
 
   const validateCSVColumns = (headers: string[], type: string): boolean => {
     const requiredColumns: Record<string, string[]> = {
-      product: ["time_scraped", "cid", "product_id", "product_title"],
+      product: ["product_id", "product_title"],
       store: ["store_name", "store_url", "store_country"],
       category: ["search_url", "category_tree", "product_url", "product_id"]
     }
@@ -160,7 +160,7 @@ export default function Uploads() {
           setIsUploading(false)
         })
       } catch (error) {
-        await logUpload(selectedType, 0, 'failed', error.message)
+        await logUpload(selectedType, 0, 'failed')
         toast({
           variant: "destructive",
           title: "File Processing Error",
@@ -316,10 +316,11 @@ export default function Uploads() {
 function transformProduct(record: any) {
   return {
     ...record,
+    date_listed: record.date_listed ? new Date(record.date_listed).toISOString() : null,
     last_24_hours: record.last_24_hours ? Number.parseInt(record.last_24_hours) : null,
     number_in_basket: record.number_in_basket ? Number.parseInt(record.number_in_basket) : null,
     product_reviews: record.product_reviews ? Number.parseInt(record.product_reviews) : null,
-    ratingValue: record.ratingValue ? Number.parseInt(record.ratingValue) : null,
+    ratingValue: record.ratingValue ? Number.parseFloat(record.ratingValue) : null,
     number_of_favourties: record.number_of_favourties ? Number.parseInt(record.number_of_favourties) : null,
     price_usd: record.price_usd ? Number.parseInt(record.price_usd) : null,
     sale_price_usd: record.sale_price_usd ? Number.parseInt(record.sale_price_usd) : null,
@@ -342,7 +343,7 @@ function transformStore(record: any) {
     store_sales: record.store_sales ? Number.parseInt(record.store_sales) : null,
     store_admirers: record.store_admirers ? Number.parseInt(record.store_admirers) : null,
     number_of_store_products: record.number_of_store_products ? Number.parseInt(record.number_of_store_products) : null,
-    star_seller: record.star_seller?.toLowerCase() === 'y' || record.star_seller === 'true' || record.star_seller === true,
+    star_seller: record.star_seller?.toLowerCase() === 'y' || record.star_seller === 'true' ||record.star_seller === 'True' || record.star_seller === true,
     most_recent_product_urls: record.most_recent_product_urls ? record.most_recent_product_urls.split(',').filter(Boolean) : [],
     looking_for_more_urls: record.looking_for_more_urls ? record.looking_for_more_urls.split(',').filter(Boolean) : [],
   }

@@ -22,7 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "sonner"
 import { getCookie } from "cookies-next/client"
 import SettingsDropdown from "./settings"
-
+import { API_URL } from "@/lib/config"
 interface User {
   id: number
   email: string
@@ -52,7 +52,7 @@ export default function Users() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('http://localhost:8000/users', {
+      const response = await fetch(`${API_URL}/users`, {
         headers: {
           auth: `${getCookie("userToken")}`,
         },
@@ -66,7 +66,7 @@ export default function Users() {
 
   const handleUpdateUser = async (user: User) => {
     try {
-      const response = await fetch(`http://localhost:8000/users/${user.id}`, {
+      const response = await fetch(`${API_URL}/users/${user.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -85,7 +85,7 @@ export default function Users() {
 
   const handleAddUser = async () => {
     try {
-      const response = await fetch('http://localhost:8000/signup', {
+      const response = await fetch(`${API_URL}/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
