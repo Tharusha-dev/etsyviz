@@ -107,6 +107,7 @@ export default function Filters({
   // Add effect to count active filters
   useEffect(() => {
     const count = Object.keys(filters).filter(key => {
+      //@ts-ignore
       const value = filters[key];
       return value !== "" && value !== null && value !== undefined && 
              !(Array.isArray(value) && value.length === 0);
