@@ -173,7 +173,7 @@ app.post("/add-product-batch", asyncHandler(async (req, res) => {
       last_24_hours: cleanProduct.last_24_hours ? parseInt(cleanProduct.last_24_hours) : null,
       number_in_basket: cleanProduct.number_in_basket ? parseInt(cleanProduct.number_in_basket) : null,
       product_reviews: cleanProduct.product_reviews ? parseInt(cleanProduct.product_reviews) : null,
-      ratingvalue: cleanProduct.ratingvalue ? parseInt(cleanProduct.ratingvalue) : null,
+      rating_value: cleanProduct.rating_value ? parseFloat(cleanProduct.rating_value) : null,
       date_of_latest_review: cleanProduct.date_of_latest_review ? new Date(cleanProduct.date_of_latest_review) : null,
       date_listed: cleanProduct.date_listed ? new Date(cleanProduct.date_listed) : null,
       number_of_favourties: cleanProduct.number_of_favourties ? parseInt(cleanProduct.number_of_favourties) : null,
@@ -228,7 +228,7 @@ app.post("/add-product-batch", asyncHandler(async (req, res) => {
         'last_24_hours',
         'number_in_basket',
         'product_reviews',
-        'ratingvalue',
+        'rating_value',
         'date_of_latest_review',
         'date_listed',
         'number_of_favourties',
@@ -452,7 +452,7 @@ app.post("/add-category-batch", asyncHandler(async (req, res) => {
 // ... existing code ...
 
 app.post("/get-rows", asyncHandler(async (req, res) => {
-  const { table, start, count, filters } = req.body;
+  const { table, start, count, filters, sort } = req.body;
 
   if(['products', 'stores','categories'].includes(table)) {
     let whereClause = [];
@@ -469,12 +469,22 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
       if (dateFields[table]) {
         dateFields[table].forEach(field => {
           if (filters[`${field}_from`]) {
-            whereClause.push(`${field} >= $${paramIndex}`);
+            // Qualify column names for joined tables
+            const qualifiedField = table === 'products' && 
+              (field === 'on_etsy_since') ? 
+              `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+            
+            whereClause.push(`${qualifiedField} >= $${paramIndex}`);
             params.push(new Date(filters[`${field}_from`]));
             paramIndex++;
           }
           if (filters[`${field}_to`]) {
-            whereClause.push(`${field} <= $${paramIndex}`);
+            // Qualify column names for joined tables
+            const qualifiedField = table === 'products' && 
+              (field === 'on_etsy_since') ? 
+              `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+            
+            whereClause.push(`${qualifiedField} <= $${paramIndex}`);
             params.push(new Date(filters[`${field}_to`]));
             paramIndex++;
           }
@@ -484,8 +494,8 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
       // Numeric range filters
       const numericFields = {
         products: [
-          'last_24_hours', 'number_in_basket', 'product_reviews', 'ratingvalue',
-          'price_usd', 'sale_price_usd'
+          'last_24_hours', 'number_in_basket', 'product_reviews', 'rating_value',
+          'price_usd', 'sale_price_usd', 'number_of_favourties'
         ],
         stores: [
           'store_reviews', 'store_review_score', 'store_sales',
@@ -493,44 +503,84 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
         ]
       };
 
+      // Store-related fields that need special handling when filtering products
+      const storeRelatedFields = [
+        'store_reviews', 'store_sales', 'store_admirers', 'number_of_store_products', 'store_country'
+      ];
+
       if (numericFields[table]) {
         numericFields[table].forEach(field => {
           if (filters[`${field}_from`]) {
-            whereClause.push(`${field} >= $${paramIndex}`);
+            // For products table with store-related fields, use the stores table alias
+            const qualifiedField = table === 'products' && storeRelatedFields.includes(field) ? 
+              `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+            
+            whereClause.push(`${qualifiedField} >= $${paramIndex}`);
             params.push(Number(filters[`${field}_from`]));
             paramIndex++;
           }
           if (filters[`${field}_to`]) {
-            whereClause.push(`${field} <= $${paramIndex}`);
+            // For products table with store-related fields, use the stores table alias
+            const qualifiedField = table === 'products' && storeRelatedFields.includes(field) ? 
+              `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+            
+            whereClause.push(`${qualifiedField} <= $${paramIndex}`);
             params.push(Number(filters[`${field}_to`]));
             paramIndex++;
           }
         });
       }
 
-      // String filters
-      if (filters.store_country) {
-        whereClause.push(`store_country ILIKE $${paramIndex}`);
+      // Handle store-related fields when filtering products
+      if (table === 'products') {
+        storeRelatedFields.forEach(field => {
+          if (filters[`${field}_from`] && !numericFields.products.includes(field)) {
+            whereClause.push(`s.${field} >= $${paramIndex}`);
+            params.push(Number(filters[`${field}_from`]));
+            paramIndex++;
+          }
+          if (filters[`${field}_to`] && !numericFields.products.includes(field)) {
+            whereClause.push(`s.${field} <= $${paramIndex}`);
+            params.push(Number(filters[`${field}_to`]));
+            paramIndex++;
+          }
+        });
+      }
+
+      // String filters - single selection
+      if (filters.store_country && !Array.isArray(filters.store_country)) {
+        const qualifiedField = table === 'products' ? 's.store_country' : 'store_country';
+        whereClause.push(`${qualifiedField} ILIKE $${paramIndex}`);
         params.push(filters.store_country);
         paramIndex++;
       }
 
       // Update the category filter to be exact match
-      if (filters.category_name) {
-        whereClause.push(`category_name = $${paramIndex}`);
+      if (filters.category_name && !Array.isArray(filters.category_name)) {
+        const qualifiedField = table === 'products' ? 'p.category_name' : 'category_name';
+        whereClause.push(`${qualifiedField} = $${paramIndex}`);
         params.push(filters.category_name);
         paramIndex++;
       }
 
       // Multiple select filters
-      if (filters.categories && Array.isArray(filters.categories)) {
-        whereClause.push(`category_name = ANY($${paramIndex})`);
+      if (filters.categories && Array.isArray(filters.categories) && filters.categories.length > 0) {
+        const qualifiedField = table === 'products' ? 'p.category_name' : 'category_name';
+        whereClause.push(`${qualifiedField} = ANY($${paramIndex})`);
         params.push(filters.categories);
         paramIndex++;
       }
 
-      if (filters.brands && Array.isArray(filters.brands)) {
-        whereClause.push(`brand = ANY($${paramIndex})`);
+      if (filters.countries && Array.isArray(filters.countries) && filters.countries.length > 0) {
+        const qualifiedField = table === 'products' ? 's.store_country' : 'store_country';
+        whereClause.push(`${qualifiedField} = ANY($${paramIndex})`);
+        params.push(filters.countries);
+        paramIndex++;
+      }
+
+      if (filters.brands && Array.isArray(filters.brands) && filters.brands.length > 0) {
+        const qualifiedField = table === 'products' ? 'p.brand' : 'brand';
+        whereClause.push(`${qualifiedField} = ANY($${paramIndex})`);
         params.push(filters.brands);
         paramIndex++;
       }
@@ -544,7 +594,11 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
       if (booleanFields[table]) {
         booleanFields[table].forEach(field => {
           if (filters[field] !== undefined) {
-            whereClause.push(`${field} = $${paramIndex}`);
+            const qualifiedField = table === 'products' ? 
+              (field === 'star_seller' ? 'p.star_seller' : `p.${field}`) : 
+              `${field}`;
+            
+            whereClause.push(`${qualifiedField} = $${paramIndex}`);
             params.push(filters[field]);
             paramIndex++;
           }
@@ -554,19 +608,75 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
       if (filters.jsonSearch && filters.jsonSearch !== '' && filters.jsonSearch !== ' ') {
         if(table === 'products') {  
           whereClause.push(`(
-            product_title ILIKE $${paramIndex} 
+            p.product_title ILIKE $${paramIndex} 
           )`);
         } else {
           whereClause.push(`(
             welcome_to_our_shop_text ILIKE $${paramIndex} OR 
             store_description ILIKE $${paramIndex} OR
             store_name ILIKE $${paramIndex}
-
           )`);
         }
         params.push(`%${filters.jsonSearch}%`);
         paramIndex++;
       }
+
+      // Handle category_ids filter for products
+      if (filters.category_ids && Array.isArray(filters.category_ids) && filters.category_ids.length > 0) {
+        const categoryIds = filters.category_ids.map(id => parseInt(id));
+        
+        // Get all products that match any of the selected category IDs
+        whereClause.push(`
+          EXISTS (
+            SELECT 1 FROM category_hierarchy ch
+            WHERE ch.id = ANY($${paramIndex})
+            AND p.category_tree LIKE '%' || ch.category_name || '%'
+          )
+        `);
+        params.push(categoryIds);
+        paramIndex++;
+      }
+      
+      // Handle store_review_score filter for stores
+      if (table === 'stores') {
+        if (filters.store_review_score_from) {
+          whereClause.push(`store_review_score >= $${paramIndex}`);
+          params.push(Number(filters.store_review_score_from));
+          paramIndex++;
+        }
+        
+        if (filters.store_review_score_to) {
+          whereClause.push(`store_review_score <= $${paramIndex}`);
+          params.push(Number(filters.store_review_score_to));
+          paramIndex++;
+        }
+      }
+    }
+
+    // Handle sorting
+    let orderByClause = '';
+    if (sort && sort.column) {
+      // Determine the correct table alias for the column
+      let columnRef;
+      
+      // List of columns that need special handling for table aliases
+      const storeColumns = ['store_reviews', 'store_review_score', 'store_sales', 
+                           'store_admirers', 'number_of_store_products', 'on_etsy_since', 
+                           'store_last_updated'];
+      
+      if (table === 'products' && storeColumns.includes(sort.column)) {
+        // For store-related columns in products table, use the stores table alias
+        columnRef = `s.${sort.column}`;
+      } else if (table === 'products') {
+        // For product columns in products table
+        columnRef = `p.${sort.column}`;
+      } else {
+        // For other tables, no alias needed
+        columnRef = sort.column;
+      }
+      
+      // Add the ORDER BY clause
+      orderByClause = ` ORDER BY ${columnRef} ${sort.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`;
     }
 
     // Add LIMIT and OFFSET parameters
@@ -574,22 +684,55 @@ app.post("/get-rows", asyncHandler(async (req, res) => {
     params.push(start);
 
     const whereString = whereClause.length > 0 ? `WHERE ${whereClause.join(' AND ')}` : '';
+    
     let query;
     if (table === 'products') {
       // Modified query to join with stores table
       query = `
         SELECT 
           p.*,
-          s.*
+          s.store_country,
+          s.store_reviews,
+          s.store_review_score,
+          s.store_sales,
+          s.store_admirers,
+          s.number_of_store_products,
+          s.on_etsy_since,
+          s.store_last_updated
         FROM products p
         LEFT JOIN stores s ON p.store_name = s.store_name
         ${whereString}
+        ${orderByClause}
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       `;
     } else {
-      query = `SELECT * FROM ${table} ${whereString} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      query = `
+        SELECT * FROM ${table} 
+        ${whereString} 
+        ${orderByClause} 
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
     }
-    const countQuery = `SELECT COUNT(*) FROM ${table} ${whereString}`;
+    
+    // Adjust the count query to match the join if needed
+    let countQuery;
+    if (table === 'products' && whereClause.some(clause => clause.includes('s.'))) {
+      countQuery = `
+        SELECT COUNT(*) 
+        FROM products p
+        LEFT JOIN stores s ON p.store_name = s.store_name
+        ${whereString}
+      `;
+    } else if (table === 'products') {
+      // Even if there are no store-related filters, we need to use the alias for product filters
+      countQuery = `
+        SELECT COUNT(*) 
+        FROM products p
+        ${whereString}
+      `;
+    } else {
+      countQuery = `SELECT COUNT(*) FROM ${table} ${whereString}`;
+    }
 
     try {
       const [result, totalCount] = await Promise.all([
@@ -727,11 +870,44 @@ app.get("/filter-options/:table", asyncHandler(async (req, res) => {
     throw { status: 400, message: "Invalid table name" };
   }
 
-  const options = {
-    countries: await sql`SELECT DISTINCT store_country FROM ${sql(table)} WHERE store_country IS NOT NULL ORDER BY store_country`,
-    categories: table === 'products' ? await sql`SELECT DISTINCT category_name FROM products WHERE category_name IS NOT NULL ORDER BY category_name` : [],
-    brands: table === 'products' ? await sql`SELECT DISTINCT brand FROM products WHERE brand IS NOT NULL ORDER BY brand` : []
-  };
+  let options = {};
+  
+  if (table === 'products') {
+    // For products, we need to get countries from the stores table
+    options = {
+      countries: await sql`
+        SELECT DISTINCT s.store_country 
+        FROM stores s
+        JOIN products p ON p.store_name = s.store_name
+        WHERE s.store_country IS NOT NULL 
+        ORDER BY s.store_country
+      `,
+      categories: await sql`
+        SELECT DISTINCT category_name 
+        FROM products 
+        WHERE category_name IS NOT NULL 
+        ORDER BY category_name
+      `,
+      brands: await sql`
+        SELECT DISTINCT brand 
+        FROM products 
+        WHERE brand IS NOT NULL 
+        ORDER BY brand
+      `
+    };
+  } else {
+    // For stores, we can get countries directly
+    options = {
+      countries: await sql`
+        SELECT DISTINCT store_country 
+        FROM stores 
+        WHERE store_country IS NOT NULL 
+        ORDER BY store_country
+      `,
+      categories: [],
+      brands: []
+    };
+  }
 
   res.json(options);
 }));
@@ -826,7 +1002,7 @@ app.get("/store-history/:storeName/:field", asyncHandler(async (req, res) => {
 
 // Add new export endpoint
 app.post("/export-data", asyncHandler(async (req, res) => {
-  const { table, filters } = req.body;
+  const { table, filters, sort } = req.body;
 
   if (!['products', 'stores'].includes(table)) {
     throw { status: 400, message: "Invalid table name" };
@@ -846,12 +1022,22 @@ app.post("/export-data", asyncHandler(async (req, res) => {
     if (dateFields[table]) {
       dateFields[table].forEach(field => {
         if (filters[`${field}_from`]) {
-          whereClause.push(`${field} >= $${paramIndex}`);
+          // Qualify column names for joined tables
+          const qualifiedField = table === 'products' && 
+            (field === 'on_etsy_since') ? 
+            `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+          
+          whereClause.push(`${qualifiedField} >= $${paramIndex}`);
           params.push(new Date(filters[`${field}_from`]));
           paramIndex++;
         }
         if (filters[`${field}_to`]) {
-          whereClause.push(`${field} <= $${paramIndex}`);
+          // Qualify column names for joined tables
+          const qualifiedField = table === 'products' && 
+            (field === 'on_etsy_since') ? 
+            `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+          
+          whereClause.push(`${qualifiedField} <= $${paramIndex}`);
           params.push(new Date(filters[`${field}_to`]));
           paramIndex++;
         }
@@ -861,9 +1047,8 @@ app.post("/export-data", asyncHandler(async (req, res) => {
     // Numeric range filters
     const numericFields = {
       products: [
-        'last_24_hours', 'number_in_basket', 'product_reviews', 'ratingvalue',
-        'number_of_favourties', 'price_usd', 'sale_price_usd', 'store_reviews',
-        'store_sales', 'store_admirers', 'number_of_store_products'
+        'last_24_hours', 'number_in_basket', 'product_reviews', 'rating_value',
+        'number_of_favourties', 'price_usd', 'sale_price_usd'
       ],
       stores: [
         'store_reviews', 'store_review_score', 'store_sales',
@@ -871,81 +1056,201 @@ app.post("/export-data", asyncHandler(async (req, res) => {
       ]
     };
 
+    // Store-related fields that need special handling when filtering products
+    const storeRelatedFields = [
+      'store_reviews', 'store_sales', 'store_admirers', 'number_of_store_products'
+    ];
+
     if (numericFields[table]) {
       numericFields[table].forEach(field => {
         if (filters[`${field}_from`]) {
-          whereClause.push(`${field} >= $${paramIndex}`);
+          // For products table with store-related fields, use the stores table alias
+          const qualifiedField = table === 'products' && storeRelatedFields.includes(field) ? 
+            `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+          
+          whereClause.push(`${qualifiedField} >= $${paramIndex}`);
           params.push(Number(filters[`${field}_from`]));
           paramIndex++;
         }
         if (filters[`${field}_to`]) {
-          whereClause.push(`${field} <= $${paramIndex}`);
+          // For products table with store-related fields, use the stores table alias
+          const qualifiedField = table === 'products' && storeRelatedFields.includes(field) ? 
+            `s.${field}` : `${table === 'products' ? 'p' : table}.${field}`;
+          
+          whereClause.push(`${qualifiedField} <= $${paramIndex}`);
           params.push(Number(filters[`${field}_to`]));
           paramIndex++;
         }
       });
     }
 
-    // String filters
-    if (filters.store_country) {
-      whereClause.push(`store_country ILIKE $${paramIndex}`);
+    // Handle store-related fields when filtering products
+    if (table === 'products') {
+      storeRelatedFields.forEach(field => {
+        if (filters[`${field}_from`] && !numericFields.products.includes(field)) {
+          whereClause.push(`s.${field} >= $${paramIndex}`);
+          params.push(Number(filters[`${field}_from`]));
+          paramIndex++;
+        }
+        if (filters[`${field}_to`] && !numericFields.products.includes(field)) {
+          whereClause.push(`s.${field} <= $${paramIndex}`);
+          params.push(Number(filters[`${field}_to`]));
+          paramIndex++;
+        }
+      });
+    }
+
+    // String filters - single selection
+    if (filters.store_country && !Array.isArray(filters.store_country)) {
+      const qualifiedField = table === 'products' ? 's.store_country' : 'store_country';
+      whereClause.push(`${qualifiedField} ILIKE $${paramIndex}`);
       params.push(filters.store_country);
       paramIndex++;
     }
 
-    if (filters.category) {
-      whereClause.push(`category_name ILIKE $${paramIndex}`);
-      params.push(filters.category);
+    if (filters.category_name && !Array.isArray(filters.category_name)) {
+      const qualifiedField = table === 'products' ? 'p.category_name' : 'category_name';
+      whereClause.push(`${qualifiedField} = $${paramIndex}`);
+      params.push(filters.category_name);
       paramIndex++;
     }
 
-    if (filters.brand) {
-      whereClause.push(`brand ILIKE $${paramIndex}`);
-      params.push(filters.brand);
+    // Multiple select filters
+    if (filters.categories && Array.isArray(filters.categories) && filters.categories.length > 0) {
+      const qualifiedField = table === 'products' ? 'p.category_name' : 'category_name';
+      whereClause.push(`${qualifiedField} = ANY($${paramIndex})`);
+      params.push(filters.categories);
+      paramIndex++;
+    }
+
+    if (filters.countries && Array.isArray(filters.countries) && filters.countries.length > 0) {
+      const qualifiedField = table === 'products' ? 's.store_country' : 'store_country';
+      whereClause.push(`${qualifiedField} = ANY($${paramIndex})`);
+      params.push(filters.countries);
+      paramIndex++;
+    }
+
+    if (filters.brands && Array.isArray(filters.brands) && filters.brands.length > 0) {
+      const qualifiedField = table === 'products' ? 'p.brand' : 'brand';
+      whereClause.push(`${qualifiedField} = ANY($${paramIndex})`);
+      params.push(filters.brands);
       paramIndex++;
     }
 
     // Boolean filters
     if (filters.star_seller !== undefined) {
-      whereClause.push(`star_seller = $${paramIndex}`);
+      const qualifiedField = table === 'products' ? 'p.star_seller' : 'star_seller';
+      whereClause.push(`${qualifiedField} = $${paramIndex}`);
       params.push(filters.star_seller);
       paramIndex++;
     }
 
     if (filters.ad !== undefined) {
-      whereClause.push(`ad = $${paramIndex}`);
+      whereClause.push(`p.ad = $${paramIndex}`);
       params.push(filters.ad);
       paramIndex++;
     }
 
     if (filters.digital_download !== undefined) {
-      whereClause.push(`digital_download = $${paramIndex}`);
+      whereClause.push(`p.digital_download = $${paramIndex}`);
       params.push(filters.digital_download);
       paramIndex++;
     }
+    
     if (filters.jsonSearch && filters.jsonSearch !== '' && filters.jsonSearch !== ' ') {
-
       if(table === 'products') {  
-        console.log("products search");
         whereClause.push(`(
-          product_title ILIKE $${paramIndex} 
+          p.product_title ILIKE $${paramIndex} 
         )`);
-      }else {
-        console.log("stores search");
+      } else {
         whereClause.push(`(
           welcome_to_our_shop_text ILIKE $${paramIndex} OR 
-          store_description ILIKE $${paramIndex}
+          store_description ILIKE $${paramIndex} OR
+          store_name ILIKE $${paramIndex}
         )`);
       }
-  
-      
       params.push(`%${filters.jsonSearch}%`);
       paramIndex++;
     }
+
+    // Handle category_ids filter for products
+    if (filters.category_ids && Array.isArray(filters.category_ids) && filters.category_ids.length > 0) {
+      const categoryIds = filters.category_ids.map(id => parseInt(id));
+      
+      whereClause.push(`
+        EXISTS (
+          SELECT 1 FROM category_hierarchy ch
+          WHERE ch.id = ANY($${paramIndex})
+          AND p.category_tree LIKE '%' || ch.category_name || '%'
+        )
+      `);
+      params.push(categoryIds);
+      paramIndex++;
+    }
+    
+    // Handle store_review_score filter for stores
+    if (table === 'stores') {
+      if (filters.store_review_score_from) {
+        whereClause.push(`store_review_score >= $${paramIndex}`);
+        params.push(Number(filters.store_review_score_from));
+        paramIndex++;
+      }
+      
+      if (filters.store_review_score_to) {
+        whereClause.push(`store_review_score <= $${paramIndex}`);
+        params.push(Number(filters.store_review_score_to));
+        paramIndex++;
+      }
+    }
+  }
+
+  // Handle sorting
+  let orderByClause = '';
+  if (sort && sort.column) {
+    // Determine the correct table alias for the column
+    let columnRef;
+    
+    // List of columns that need special handling for table aliases
+    const storeColumns = ['store_reviews', 'store_review_score', 'store_sales', 
+                         'store_admirers', 'number_of_store_products', 'on_etsy_since', 
+                         'store_last_updated'];
+    
+    if (table === 'products' && storeColumns.includes(sort.column)) {
+      // For store-related columns in products table, use the stores table alias
+      columnRef = `s.${sort.column}`;
+    } else if (table === 'products') {
+      // For product columns in products table
+      columnRef = `p.${sort.column}`;
+    } else {
+      // For other tables, no alias needed
+      columnRef = sort.column;
+    }
+    
+    // Add the ORDER BY clause
+    orderByClause = ` ORDER BY ${columnRef} ${sort.direction === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`;
   }
 
   const whereString = whereClause.length > 0 ? `WHERE ${whereClause.join(' AND ')}` : '';
-  const query = `SELECT * FROM ${table} ${whereString}`;
+  let query;
+  
+  if (table === 'products') {
+    query = `
+      SELECT 
+        p.*,
+        s.store_reviews,
+        s.store_review_score,
+        s.store_sales,
+        s.store_admirers,
+        s.number_of_store_products,
+        s.on_etsy_since,
+        s.store_last_updated
+      FROM products p
+      LEFT JOIN stores s ON p.store_name = s.store_name
+      ${whereString}
+    `;
+  } else {
+    query = `SELECT * FROM ${table} ${whereString}`;
+  }
 
   try {
     const result = await sql.unsafe(query, params);

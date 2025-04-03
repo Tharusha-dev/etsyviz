@@ -8,6 +8,8 @@ import {
   getCoreRowModel,
   useReactTable,
   getPaginationRowModel,
+  SortingState,
+  getSortedRowModel,
 } from "@tanstack/react-table"
 import {
   Table,
@@ -22,7 +24,7 @@ import { Progress } from "@/components/ui/progress"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { API_URL } from "@/lib/config"
-import { Upload, Download } from "lucide-react"
+import { Upload, Download, ArrowUpDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import ExpandableText from "./expandableText"
 import SettingsDropdown from "./settings"
@@ -99,9 +101,38 @@ const createHistoryCell = (key: string, formatter?: (value: any) => string) => (
   },
 });
 
+// Helper function to create a sortable header
+const createSortableHeader = (label: string) => {
+  return ({ column }: { column: any }) => {
+    return (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        className="p-0 hover:bg-transparent"
+      >
+        {label}
+        <ArrowUpDown className="ml-2 h-4 w-4" />
+      </Button>
+    );
+  };
+};
+
 // Define columns
 const columns: ColumnDef<Store>[] = [
-
+  {
+    accessorKey: "store_logo_url",
+    header: "Logo",
+    cell: ({ row }) => {
+      const url = row.getValue("store_logo_url")
+      return url ? (
+        <img 
+          src={url as string} 
+          alt="Store Logo" 
+          className="w-12 h-12 object-contain rounded-md"
+        />
+      ) : "N/A"
+    },
+  },
   {
     accessorKey: "store_name",
     header: "Store Name",
@@ -131,20 +162,7 @@ const columns: ColumnDef<Store>[] = [
       <ExpandableText text={row.getValue("welcome_to_our_shop_text")} />
     ),
   },
-  {
-    accessorKey: "store_logo_url",
-    header: "Logo",
-    cell: ({ row }) => {
-      const url = row.getValue("store_logo_url")
-      return url ? (
-        <img 
-          src={url as string} 
-          alt="Store Logo" 
-          className="w-16 h-16 object-cover"
-        />
-      ) : "N/A"
-    },
-  },
+
   {
     accessorKey: "store_description",
     header: "Description",
@@ -157,7 +175,21 @@ const columns: ColumnDef<Store>[] = [
     header: "Recent Products",
     cell: ({ row }) => {
       const urls = row.getValue("most_recent_product_urls") as string[]
-      return urls?.length ? `${urls.length} products` : "None"
+      return urls?.length ? (
+        <div className="flex flex-col gap-1">
+          {urls.map((url, index) => (
+            <a
+              key={index}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              Link
+            </a>
+          ))}
+        </div>
+      ) : "None"
     },
   },
   {
@@ -171,7 +203,7 @@ const columns: ColumnDef<Store>[] = [
   },
   {
     accessorKey: "store_last_updated",
-    header: "Last Updated",
+    header: createSortableHeader("Last Updated"),
     cell: ({ row }) => {
       const date = row.getValue("store_last_updated")
       return date ? new Date(date as string).toLocaleDateString() : "N/A"
@@ -179,17 +211,17 @@ const columns: ColumnDef<Store>[] = [
   },
   {
     accessorKey: "store_reviews",
-    header: "Reviews",
+    header: createSortableHeader("Reviews"),
     ...createHistoryCell("store_reviews")
   },
   {
     accessorKey: "store_review_score",
-    header: "Review Score",
+    header: createSortableHeader("Review Score"),
     ...createHistoryCell("store_review_score")
   },
   {
     accessorKey: "on_etsy_since",
-    header: "On Etsy Since",
+    header: createSortableHeader("On Etsy Since"),
     cell: ({ row }) => {
       const date = row.getValue("on_etsy_since")
       return date ? new Date(date as string).toLocaleDateString() : "N/A"
@@ -197,27 +229,27 @@ const columns: ColumnDef<Store>[] = [
   },
   {
     accessorKey: "store_sales",
-    header: "Sales",
+    header: createSortableHeader("Sales"),
     ...createHistoryCell("store_sales")
   },
   {
     accessorKey: "store_admirers",
-    header: "Admirers",
+    header: createSortableHeader("Admirers"),
     ...createHistoryCell("store_admirers")
   },
   {
     accessorKey: "number_of_store_products",
-    header: "Products",
+    header: createSortableHeader("Products"),
     ...createHistoryCell("number_of_store_products")
   },
-  {
-    accessorKey: "looking_for_more_urls",
-    header: "More URLs",
-    cell: ({ row }) => {
-      const urls = row.getValue("looking_for_more_urls") as string[]
-      return urls?.length ? `${urls.length} links` : "None"
-    },
-  },
+  // {
+  //   accessorKey: "looking_for_more_urls",
+  //   header: "More URLs",
+  //   cell: ({ row }) => {
+  //     const urls = row.getValue("looking_for_more_urls") as string[]
+  //     return urls?.length ? `${urls.length} links` : "None"
+  //   },
+  // },
   {
     accessorKey: "facebook_url",
     header: "Facebook",
@@ -288,8 +320,6 @@ const columns: ColumnDef<Store>[] = [
   },
 ]
 
-
-
 export default function Stores() {
   const [products, setProducts] = useState<Store[]>([])
   const [progress, setProgress] = useState(0)
@@ -298,10 +328,14 @@ export default function Stores() {
   const [processedRows, setProcessedRows] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [filters, setFilters] = useState({})
+  
+  // Add state for sorting
+  const [sorting, setSorting] = useState<SortingState>([])
+  
   // Add state for pagination
   const [{ pageIndex, pageSize }, setPagination] = useState({
     pageIndex: 0,
-    pageSize: 10, // Number of rows per page
+    pageSize: 10,
   })
 
   const { toast } = useToast()
@@ -309,10 +343,17 @@ export default function Stores() {
   // Add state for total filtered count
   const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
 
-  // Update fetchData function to set total filtered count
-  const fetchData = async (start: number, size: number, currentFilters = filters) => {
+  // Update fetchData function to include sorting parameters
+  const fetchData = async (start: number, size: number, currentFilters = filters, currentSorting = sorting) => {
     try {
       setIsLoading(true);
+      
+      // Convert sorting state to a format the server can understand
+      const sortParams = currentSorting.length > 0 ? {
+        column: currentSorting[0].id,
+        direction: currentSorting[0].desc ? 'desc' : 'asc'
+      } : null;
+      
       const response = await fetch(`${API_URL}/get-rows`, {
         method: 'POST',
         headers: {
@@ -323,6 +364,7 @@ export default function Stores() {
           start,
           count: size,
           filters: currentFilters,
+          sort: sortParams
         }),
       });
       
@@ -330,7 +372,7 @@ export default function Stores() {
       
       const { data, totalCount } = await response.json();
       setTotalRows(totalCount);
-      setTotalFilteredCount(totalCount); // Set the filtered count
+      setTotalFilteredCount(totalCount);
       setProducts(data);
       setIsLoading(false);
       return data;
@@ -341,41 +383,42 @@ export default function Stores() {
     }
   }
 
-  const handleFilterChange = useCallback(async (newFilters: any) => {
-    setFilters(newFilters);
-    await fetchData(0, pageSize, newFilters); // Immediately fetch with new filters
-    setPagination(prev => ({ ...prev, pageIndex: 0 })); // Reset to first page
+  // Initial data fetch
+  useEffect(() => {
+    fetchData(0, pageSize);
   }, [pageSize]);
 
+  // Handle filter changes
+  const handleFilterChange = useCallback(async (newFilters: any) => {
+    setFilters(newFilters);
+    await fetchData(0, pageSize, newFilters, sorting);
+    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+  }, [pageSize, sorting]);
+
+  // Handle sorting changes
+  useEffect(() => {
+    fetchData(pageIndex * pageSize, pageSize, filters, sorting);
+  }, [sorting, pageIndex, pageSize]);
 
   const table = useReactTable({
     data: products,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    // Add manual pagination
+    getSortedRowModel: getSortedRowModel(),
     manualPagination: true,
+    manualSorting: true,
     pageCount: Math.ceil(totalRows / pageSize),
     state: {
       pagination: {
         pageIndex,
         pageSize,
       },
+      sorting,
     },
     onPaginationChange: setPagination,
+    onSortingChange: setSorting,
   })
-
-  // Handle page changes
-  useEffect(() => {
-    const loadPageData = async () => {
-      setIsLoading(true)
-      const start = pageIndex * pageSize
-      const newData = await fetchData(start, pageSize)
-      setProducts(newData)
-      setIsLoading(false)
-    }
-    loadPageData()
-  }, [pageIndex, pageSize])
 
   const validateCSVColumns = (headers: string[]): boolean => {
     const requiredColumns = [
@@ -515,6 +558,12 @@ export default function Stores() {
 
   const handleExport = async () => {
     try {
+      // Convert sorting state to a format the server can understand
+      const sortParams = sorting.length > 0 ? {
+        column: sorting[0].id,
+        direction: sorting[0].desc ? 'desc' : 'asc'
+      } : null;
+      
       const response = await fetch(`${API_URL}/export-data`, {
         method: 'POST',
         headers: {
@@ -523,6 +572,7 @@ export default function Stores() {
         body: JSON.stringify({
           table: 'stores',
           filters: filters,
+          sort: sortParams  // Add sorting parameters to the export request
         }),
       });
 

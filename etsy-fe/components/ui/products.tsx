@@ -8,6 +8,8 @@ import {
   getCoreRowModel,
   useReactTable,
   getPaginationRowModel,
+  SortingState,
+  getSortedRowModel,
 } from "@tanstack/react-table"
 import {
   Table,
@@ -22,7 +24,7 @@ import { Progress } from "@/components/ui/progress"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { API_URL } from "@/lib/config"
-import { Upload, Download } from "lucide-react"
+import { Upload, Download, ArrowUpDown } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import ExpandableText from "./expandableText"
 import SettingsDropdown from "./settings"
@@ -48,7 +50,7 @@ interface Product {
   last_24_hours: number
   number_in_basket: number
   product_reviews: number
-  ratingValue: number
+  rating_value: number
   date_of_latest_review: string
   date_listed: string
   number_of_favourties: number
@@ -105,8 +107,7 @@ const createHistoryCell = (key: string, formatter?: (value: any) => string) => (
         <HistoryPopup
           isOpen={showHistory}
           onClose={() => setShowHistory(false)}
-    //@ts-ignore
-
+          //@ts-ignore
           data={historyData}
           fieldName={key}
         />
@@ -115,8 +116,35 @@ const createHistoryCell = (key: string, formatter?: (value: any) => string) => (
   },
 });
 
+// Helper function to create a sortable header
+const createSortableHeader = (label: string) => {
+  return ({ column }: { column: any }) => {
+    return (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        className="p-0 hover:bg-transparent"
+      >
+        {label}
+        <ArrowUpDown className="ml-2 h-4 w-4" />
+      </Button>
+    );
+  };
+};
+
 // Define columns
 const columns: ColumnDef<Product>[] = [
+  {
+    accessorKey: "image",
+    header: "Image",
+    cell: ({ row }) => (
+      <img 
+        src={row.getValue("image")} 
+        alt={row.getValue("product_title")} 
+        className="w-16 h-16 object-cover"
+      />
+    ),
+  },
   {
     accessorKey: "product_title",
     header: "Product Title",
@@ -172,17 +200,7 @@ const columns: ColumnDef<Product>[] = [
     accessorKey: "brand",
     header: "Brand",
   },
-  {
-    accessorKey: "image",
-    header: "Image",
-    cell: ({ row }) => (
-      <img 
-        src={row.getValue("image")} 
-        alt={row.getValue("product_title")} 
-        className="w-16 h-16 object-cover"
-      />
-    ),
-  },
+  
   {
     accessorKey: "last_24_hours",
     header: "Last 24 Hours",
@@ -201,24 +219,32 @@ const columns: ColumnDef<Product>[] = [
 
   },
   {
-    accessorKey: "ratingValue",
+    accessorKey: "rating_value",
     header: "Rating",
     // cell: ({ row }) => row.getValue("ratingValue") ?? "N/A",
-    ...createHistoryCell("ratingValue")
+    ...createHistoryCell("rating_value")
 
     
   },
   {
     accessorKey: "date_of_latest_review",
-    header: "Latest Review Date",
+    header: createSortableHeader("Latest Review Date"),
+    cell: ({ row }) => {
+      const date = row.getValue("date_of_latest_review");
+      return date ? new Date(date as string).toLocaleDateString() : "N/A";
+    },
   },
   {
     accessorKey: "date_listed",
-    header: "Date Listed",
+    header: createSortableHeader("Date Listed"),
+    cell: ({ row }) => {
+      const date = row.getValue("date_listed");
+      return date ? new Date(date as string).toLocaleDateString() : "N/A";
+    },
   },
   {
     accessorKey: "number_of_favourties",
-    header: "Favorites",
+    header: createSortableHeader("Favorites"),
     // cell: ({ row }) => row.getValue("number_of_favourties") ?? "N/A",
     ...createHistoryCell("number_of_favourties")
 
@@ -244,7 +270,7 @@ const columns: ColumnDef<Product>[] = [
   },
   {
     accessorKey: "price_usd",
-    header: "Price (USD)",
+    header: createSortableHeader("Price (USD)"),
     // cell: ({ row }) => {
     //   const price = row.getValue("price_usd")
     //   return price ? new Intl.NumberFormat('en-US', {
@@ -257,7 +283,7 @@ const columns: ColumnDef<Product>[] = [
   },
   {
     accessorKey: "sale_price_usd",
-    header: "Sale Price (USD)",
+    header: createSortableHeader("Sale Price (USD)"),
     // cell: ({ row }) => {
     //   const price = row.getValue("sale_price_usd")
     //   return price ? new Intl.NumberFormat('en-US', {
@@ -270,7 +296,7 @@ const columns: ColumnDef<Product>[] = [
   },
   {
     accessorKey: "store_reviews",
-    header: "Store Reviews",
+    header: createSortableHeader("Store Reviews"),
     // cell: ({ row }) => row.getValue("store_reviews") ?? "N/A",
     ...createHistoryCell("store_reviews")
 
@@ -299,28 +325,26 @@ const columns: ColumnDef<Product>[] = [
   },
   {
     accessorKey: "on_etsy_since",
-    header: "On Etsy Since",
+    header: createSortableHeader("On Etsy Since"),
+    cell: ({ row }) => {
+      const date = row.getValue("on_etsy_since");
+      return date ? new Date(date as string).toLocaleDateString() : "N/A";
+    },
   },
   {
     accessorKey: "store_sales",
-    header: "Store Sales",
-    cell: ({ row }) => row.getValue("store_sales") ?? "N/A",
-    // ...createHistoryCell("store_sales")
-
+    header: createSortableHeader("Store Sales"),
+    ...createHistoryCell("store_sales")
   },
   {
     accessorKey: "store_admirers",
-    header: "Store Admirers",
-    cell: ({ row }) => row.getValue("store_admirers") ?? "N/A",
-    // ...createHistoryCell("store_admirers")
-
+    header: createSortableHeader("Store Admirers"),
+    ...createHistoryCell("store_admirers")
   },
   {
     accessorKey: "number_of_store_products",
-    header: "Store Products",
-    cell: ({ row }) => row.getValue("number_of_store_products") ?? "N/A",
-    // ...createHistoryCell("number_of_store_products")
-
+    header: createSortableHeader("Store Products"),
+    ...createHistoryCell("number_of_store_products")
   },
   // {
   //   accessorKey: "facebook_url",
@@ -400,6 +424,9 @@ export default function Product() {
   const [processedRows, setProcessedRows] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [filters, setFilters] = useState({})
+  
+  // Add state for sorting
+  const [sorting, setSorting] = useState<SortingState>([])
 
   // Add state for pagination
   const [{ pageIndex, pageSize }, setPagination] = useState({
@@ -412,10 +439,17 @@ export default function Product() {
   // Add new state for total filtered count
   const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
 
-  // Update fetchData function to set total filtered count
-  const fetchData = async (start: number, size: number, currentFilters = filters) => {
+  // Update fetchData function to include sorting parameters
+  const fetchData = async (start: number, size: number, currentFilters = filters, currentSorting = sorting) => {
     try {
       setIsLoading(true);
+      
+      // Convert sorting state to a format the server can understand
+      const sortParams = currentSorting.length > 0 ? {
+        column: currentSorting[0].id,
+        direction: currentSorting[0].desc ? 'desc' : 'asc'
+      } : null;
+      
       const response = await fetch(`${API_URL}/get-rows`, {
         method: 'POST',
         headers: {
@@ -426,6 +460,7 @@ export default function Product() {
           start,
           count: size,
           filters: currentFilters,
+          sort: sortParams
         }),
       });
       
@@ -433,7 +468,7 @@ export default function Product() {
       
       const { data, totalCount } = await response.json();
       setTotalRows(totalCount);
-      setTotalFilteredCount(totalCount); // Set the filtered count
+      setTotalFilteredCount(totalCount);
       setProducts(data);
       setIsLoading(false);
       return data;
@@ -452,30 +487,39 @@ export default function Product() {
   // Handle filter changes
   const handleFilterChange = useCallback(async (newFilters: any) => {
     setFilters(newFilters);
-    await fetchData(0, pageSize, newFilters); // Immediately fetch with new filters
-    setPagination(prev => ({ ...prev, pageIndex: 0 })); // Reset to first page
-  }, [pageSize]);
+    await fetchData(0, pageSize, newFilters, sorting);
+    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+  }, [pageSize, sorting]);
+
+  // Handle sorting changes
+  useEffect(() => {
+    fetchData(pageIndex * pageSize, pageSize, filters, sorting);
+  }, [sorting, pageIndex, pageSize]);
+
+  // Handle page changes
+  useEffect(() => {
+    fetchData(pageIndex * pageSize, pageSize, filters, sorting);
+  }, [pageIndex, pageSize]);
 
   const table = useReactTable({
     data: products,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     manualPagination: true,
+    manualSorting: true,
     pageCount: Math.ceil(totalRows / pageSize),
     state: {
       pagination: {
         pageIndex,
         pageSize,
       },
+      sorting,
     },
     onPaginationChange: setPagination,
+    onSortingChange: setSorting,
   })
-
-  // Handle page changes
-  useEffect(() => {
-    fetchData(pageIndex * pageSize, pageSize);
-  }, [pageIndex, pageSize]);
 
   const validateCSVColumns = (headers: string[]): boolean => {
     const requiredColumns = [
@@ -538,7 +582,7 @@ export default function Product() {
               last_24_hours: record.last_24_hours ? Number.parseInt(record.last_24_hours) : null,
               number_in_basket: record.number_in_basket ? Number.parseInt(record.number_in_basket) : null,
               product_reviews: record.product_reviews ? Number.parseInt(record.product_reviews) : null,
-              ratingValue: record.ratingValue ? Number.parseInt(record.ratingValue) : null,
+              rating_value: record.rating_value ? Number.parseFloat(record.rating_value) : null,
               number_of_favourties: record.number_of_favourties ? Number.parseInt(record.number_of_favourties) : null,
               price_usd: record.price_usd ? Number.parseInt(record.price_usd) : null,
               sale_price_usd: record.sale_price_usd ? Number.parseInt(record.sale_price_usd) : null,
@@ -633,6 +677,12 @@ export default function Product() {
   // Add export function
   const handleExport = async () => {
     try {
+      // Convert sorting state to a format the server can understand
+      const sortParams = sorting.length > 0 ? {
+        column: sorting[0].id,
+        direction: sorting[0].desc ? 'desc' : 'asc'
+      } : null;
+      
       const response = await fetch(`${API_URL}/export-data`, {
         method: 'POST',
         headers: {
@@ -641,6 +691,7 @@ export default function Product() {
         body: JSON.stringify({
           table: 'products',
           filters: filters,
+          sort: sortParams  // Add sorting parameters to the export request
         }),
       });
 

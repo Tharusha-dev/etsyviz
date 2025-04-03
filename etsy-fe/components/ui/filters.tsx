@@ -11,7 +11,7 @@ import {
 import { Button } from "./button";
 import { DatePicker } from "./datePicker";
 import { API_URL } from "@/lib/config";
-import { Download, Search, X, ChevronRight } from "lucide-react";
+import { Download, Search, X, ChevronRight, Plus } from "lucide-react";
 import { Checkbox } from "./checkbox";
 import {
   DropdownMenu,
@@ -61,11 +61,15 @@ export default function Filters({
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [categoryHierarchy, setCategoryHierarchy] = useState<CategoryItem[][]>([]);
   const [selectedCategoryPath, setSelectedCategoryPath] = useState<number[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeFilterCount, setActiveFilterCount] = useState(0);
+  const [storeReviewScoreFrom, setStoreReviewScoreFrom] = useState<string>("");
+  const [storeReviewScoreTo, setStoreReviewScoreTo] = useState<string>("");
+  const [categoryPaths, setCategoryPaths] = useState<Array<number[]>>([[]]);
 
   useEffect(() => {
     // Fetch filter options
@@ -132,35 +136,147 @@ export default function Filters({
     return () => clearTimeout(timeoutId);
   }, [searchValue]);
 
-  // Handle category selection
-  const handleCategorySelect = async (categoryId: number, level: number) => {
-    try {
-      // Update selected path
-      const newPath = [...selectedCategoryPath.slice(0, level), categoryId];
-      setSelectedCategoryPath(newPath);
-
-      // Fetch child categories
-      const response = await fetch(`${API_URL}/category-hierarchy/${categoryId}`);
-      const children = await response.json();
-
-      // Update hierarchy
-      const newHierarchy = [...categoryHierarchy.slice(0, level + 1)];
-      if (children.length > 0) {
-        newHierarchy.push(children);
-      }
-      setCategoryHierarchy(newHierarchy);
-
-      // If this is a leaf category (no children), use it as filter
-      if (children.length === 0) {
-        const selectedCategory = categoryHierarchy[level].find(c => c.id === categoryId);
-        if (selectedCategory) {
-          handleFilterChange('category_name', selectedCategory.category_name);
-        }
-      }
-    } catch (error) {
-      console.error('Error handling category selection:', error);
+  // Update handleCategorySelect to work with multiple paths
+  const handleCategorySelect = (categoryId: number, level: number, pathIndex: number = 0) => {
+    // Create a copy of all paths
+    const newCategoryPaths = [...categoryPaths];
+    
+    // Update the specific path
+    const newPath = [...newCategoryPaths[pathIndex]];
+    // Truncate the path at this level and add the new selection
+    newPath.length = level;
+    newPath.push(categoryId);
+    newCategoryPaths[pathIndex] = newPath;
+    
+    setCategoryPaths(newCategoryPaths);
+    
+    // Fetch subcategories for this selection
+    fetchCategoryChildren(categoryId, level + 1, pathIndex);
+    
+    // Apply filter with all selected categories
+    const selectedCategories = newCategoryPaths
+      .map(path => path[path.length - 1])
+      .filter(Boolean);
+      
+    if (selectedCategories.length > 0) {
+      handleFilterChange("category_ids", selectedCategories);
     }
   };
+  
+  // Fetch category children for a specific path
+  const fetchCategoryChildren = async (parentId: number | null, level: number, pathIndex: number) => {
+    try {
+      const response = await fetch(`${API_URL}/category-hierarchy/${parentId || ''}`);
+      if (!response.ok) throw new Error('Failed to fetch categories');
+      const data = await response.json();
+      
+      // Update the hierarchy for this specific level and path
+      const newHierarchy = [...categoryHierarchy];
+      
+      // Ensure the hierarchy has enough levels
+      while (newHierarchy.length <= level) {
+        newHierarchy.push([]);
+      }
+      
+      newHierarchy[level] = data;
+      setCategoryHierarchy(newHierarchy);
+    } catch (error) {
+      console.error('Error fetching category children:', error);
+    }
+  };
+  
+  // Add a new category path
+  const addCategoryPath = () => {
+    setCategoryPaths([...categoryPaths, []]);
+  };
+  
+  // Remove a category path
+  const removeCategoryPath = (pathIndex: number) => {
+    if (categoryPaths.length <= 1) return; // Keep at least one path
+    
+    const newPaths = categoryPaths.filter((_, index) => index !== pathIndex);
+    setCategoryPaths(newPaths);
+    
+    // Update filters with remaining categories
+    const selectedCategories = newPaths
+      .map(path => path[path.length - 1])
+      .filter(Boolean);
+      
+    if (selectedCategories.length > 0) {
+      handleFilterChange("category_ids", selectedCategories);
+    } else {
+      // Clear the filter if no categories are selected
+      handleFilterChange("category_ids", null);
+    }
+  };
+  
+  // Render multiple category trees
+  const renderCategoryDropdowns = () => (
+    <div className="space-y-2 flex flex-col">
+      <label>Categories</label>
+      <div className="space-y-4">
+        {categoryPaths.map((path, pathIndex) => (
+          <div key={`path-${pathIndex}-${path.join('-')}`} className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
+                {categoryHierarchy.map((categories, level) => {
+                  // Only show this level dropdown if all previous levels in this path have selections
+                  if (level > 0 && !path[level - 1]) return null;
+                  
+                  return (
+                    <div key={`${pathIndex}-${level}`} className="flex items-center">
+                      <Select
+                        key={`select-${pathIndex}-${level}-${path[level] || 'empty'}`}
+                        value={path[level]?.toString() || ''}
+                        onValueChange={(value) => handleCategorySelect(parseInt(value), level, pathIndex)}
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((category) => (
+                            <SelectItem key={category.id} value={category.id.toString()}>
+                              {category.category_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {level < categoryHierarchy.length - 1 && path[level] && (
+                        <ChevronRight className="h-4 w-4 mx-2" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Add remove button for paths after the first one */}
+              {pathIndex > 0 && (
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => removeCategoryPath(pathIndex)}
+                  className="h-8 w-8"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+        
+        {/* Add button for new category path */}
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={addCategoryPath}
+          className="mt-2"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Another Category
+        </Button>
+      </div>
+    </div>
+  );
 
   const clearFilters = () => {
     // Reset all state values
@@ -170,11 +286,15 @@ export default function Filters({
     setSelectedCategory("");
     setSelectedBrand("");
     setSelectedCategories([]);
+    setSelectedCountries([]);
     setSelectedBrands([]);
     
-    // Reset category hierarchy state
+    // Reset category paths and hierarchy state
+    setCategoryPaths([[]]);
     setSelectedCategoryPath([]);
     setCategoryHierarchy([categoryHierarchy[0]]); // Keep only the top-level categories
+    setStoreReviewScoreFrom("");
+    setStoreReviewScoreTo("");
 
     // Reset all form elements to default values
     const dateInputs = document.querySelectorAll('input[type="date"]');
@@ -185,7 +305,6 @@ export default function Filters({
 
     const numberInputs = document.querySelectorAll('input[type="number"]');
     //@ts-ignore
-
     numberInputs.forEach((input: HTMLInputElement) => {
       input.value = "";
     });
@@ -200,36 +319,17 @@ export default function Filters({
     onFilterChange({});
   };
 
-  // Replace the existing category dropdown with this:
-  const renderCategoryDropdowns = () => (
-    <div className="space-y-2 flex flex-col">
-      <label>Categories</label>
-      <div className="flex gap-2 flex-wrap">
-        {categoryHierarchy.map((categories, level) => (
-          <div key={level} className="flex items-center">
-            <Select
-              value={selectedCategoryPath[level]?.toString() || ''}
-              onValueChange={(value) => handleCategorySelect(parseInt(value), level)}
-            >
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id.toString()}>
-                    {category.category_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {level < categoryHierarchy.length - 1 && (
-              <ChevronRight className="h-4 w-4 mx-2" />
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  // Add a function to handle multiple selection
+  const handleMultiSelect = (field: string, value: string, currentValues: string[], setValues: React.Dispatch<React.SetStateAction<string[]>>) => {
+    let newValues;
+    if (currentValues.includes(value)) {
+      newValues = currentValues.filter(v => v !== value);
+    } else {
+      newValues = [...currentValues, value];
+    }
+    setValues(newValues);
+    handleFilterChange(field, newValues.length > 0 ? newValues : null);
+  };
 
   return (
     <div className="space-y-2">
@@ -303,24 +403,31 @@ export default function Filters({
                   {/* Store Country Dropdown */}
                   <div className="space-y-2">
                     <label>Store Country</label>
-                    <Select
-                      value={selectedCountry}
-                      onValueChange={(value) => {
-                        setSelectedCountry(value);
-                        handleFilterChange("store_country", value);
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select country" />
-                      </SelectTrigger>
-                      <SelectContent>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between">
+                          {selectedCountries.length > 0 
+                            ? `${selectedCountries.length} selected` 
+                            : "Select countries"}
+                          <ChevronRight className="h-4 w-4 ml-2 rotate-90" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-56 max-h-[300px] overflow-auto">
+                        <DropdownMenuLabel>Countries</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
                         {filterOptions.countries.map((country) => (
-                          <SelectItem key={country} value={country}>
+                          <DropdownMenuCheckboxItem
+                            key={country}
+                            checked={selectedCountries.includes(country)}
+                            onCheckedChange={() => 
+                              handleMultiSelect("countries", country, selectedCountries, setSelectedCountries)
+                            }
+                          >
                             {country}
-                          </SelectItem>
+                          </DropdownMenuCheckboxItem>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   {/* Star Seller dropdown */}
@@ -354,8 +461,99 @@ export default function Filters({
                     />
                   </div>
 
-                  {/* Add other store numeric filters similarly */}
-                  {/* Store Sales, Store Admirers, Store Number of Products */}
+                  {/* Store Reviews */}
+                  <div className="space-y-2">
+                    <label>Store Reviews</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("store_reviews_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("store_reviews_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Store Sales */}
+                  <div className="space-y-2">
+                    <label>Store Sales</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("store_sales_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("store_sales_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Store Admirers */}
+                  <div className="space-y-2">
+                    <label>Store Admirers</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("store_admirers_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("store_admirers_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Store Products */}
+                  <div className="space-y-2">
+                    <label>Store Products</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("number_of_store_products_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("number_of_store_products_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Last Updated */}
+                  <div className="space-y-2">
+                    <label>Last Updated</label>
+                    <DatePicker
+                      onChange={(date) => handleFilterChange("store_last_updated_from", date)}
+                    />
+                    <DatePicker
+                      onChange={(date) => handleFilterChange("store_last_updated_to", date)}
+                    />
+                  </div>
+
+                  {/* Store Review Score */}
+                  <div className="space-y-2">
+                    <label>Store Review Score</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      value={storeReviewScoreFrom}
+                      onChange={(e) => {
+                        setStoreReviewScoreFrom(e.target.value);
+                        handleFilterChange("store_review_score_from", e.target.value);
+                      }}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      value={storeReviewScoreTo}
+                      onChange={(e) => {
+                        setStoreReviewScoreTo(e.target.value);
+                        handleFilterChange("store_review_score_to", e.target.value);
+                      }}
+                    />
+                  </div>
                 </>
               )}
 
@@ -382,7 +580,37 @@ export default function Filters({
                     />
                   </div>
 
-                  {/* Categories Multi-select */}
+                  {/* Countries Multi-select */}
+                  <div className="space-y-2">
+                    <label>Countries</label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between">
+                          {selectedCountries.length > 0 
+                            ? `${selectedCountries.length} selected` 
+                            : "Select countries"}
+                          <ChevronRight className="h-4 w-4 ml-2 rotate-90" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-56 max-h-[300px] overflow-auto">
+                        <DropdownMenuLabel>Countries</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {filterOptions.countries.map((country) => (
+                          <DropdownMenuCheckboxItem
+                            key={country}
+                            checked={selectedCountries.includes(country)}
+                            onCheckedChange={() => 
+                              handleMultiSelect("countries", country, selectedCountries, setSelectedCountries)
+                            }
+                          >
+                            {country}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  {/* Category Hierarchy */}
                   {renderCategoryDropdowns()}
 
                   {/* Checkboxes */}
@@ -401,6 +629,13 @@ export default function Filters({
                       />
                       <label htmlFor="digital">Digital Download</label>
                     </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="star_seller"
+                        onCheckedChange={(checked) => handleFilterChange("star_seller", checked)}
+                      />
+                      <label htmlFor="star_seller">Star Seller</label>
+                    </div>
                   </div>
 
                   {/* Numeric range filters */}
@@ -415,6 +650,21 @@ export default function Filters({
                       type="number"
                       placeholder="To"
                       onChange={(e) => handleFilterChange("last_24_hours_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Favorites */}
+                  <div className="space-y-2">
+                    <label>Favorites</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("number_of_favourties_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("number_of_favourties_to", e.target.value)}
                     />
                   </div>
 
@@ -503,8 +753,65 @@ export default function Filters({
                     />
                   </div>
 
-                  {/* Add other numeric filters similarly */}
-                  {/* Number in Basket, Product Reviews, Product Ratings, Price, Sale Price */}
+                  {/* Store Reviews */}
+                  <div className="space-y-2">
+                    <label>Store Reviews</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("store_reviews_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("store_reviews_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Store Sales */}
+                  <div className="space-y-2">
+                    <label>Store Sales</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("store_sales_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("store_sales_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Store Admirers */}
+                  <div className="space-y-2">
+                    <label>Store Admirers</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("store_admirers_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("store_admirers_to", e.target.value)}
+                    />
+                  </div>
+
+                  {/* Store Products */}
+                  <div className="space-y-2">
+                    <label>Store Products</label>
+                    <Input
+                      type="number"
+                      placeholder="From"
+                      onChange={(e) => handleFilterChange("number_of_store_products_from", e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To"
+                      onChange={(e) => handleFilterChange("number_of_store_products_to", e.target.value)}
+                    />
+                  </div>
                 </>
               )}
             </div>

@@ -43,7 +43,7 @@ interface Product {
   last_24_hours: number
   number_in_basket: number
   product_reviews: number
-  ratingValue: number
+  rating_value: number
   date_of_latest_review: string
   date_listed: string
   number_of_favourties: number
@@ -160,9 +160,9 @@ const columns: ColumnDef<Product>[] = [
     cell: ({ row }) => row.getValue("product_reviews") ?? "N/A",
   },
   {
-    accessorKey: "ratingValue",
+    accessorKey: "rating_value",
     header: "Rating",
-    cell: ({ row }) => row.getValue("ratingValue") ?? "N/A",
+    cell: ({ row }) => row.getValue("rating_value") ?? "N/A",
   },
   {
     accessorKey: "date_of_latest_review",
@@ -477,7 +477,7 @@ export default function Product() {
               last_24_hours: record.last_24_hours ? Number.parseInt(record.last_24_hours) : null,
               number_in_basket: record.number_in_basket ? Number.parseInt(record.number_in_basket) : null,
               product_reviews: record.product_reviews ? Number.parseInt(record.product_reviews) : null,
-              ratingValue: record.ratingValue ? Number.parseInt(record.ratingValue) : null,
+              rating_value: record.rating_value ? Number.parseFloat(record.rating_value) : null,
               number_of_favourties: record.number_of_favourties ? Number.parseInt(record.number_of_favourties) : null,
               price_usd: record.price_usd ? Number.parseInt(record.price_usd) : null,
               sale_price_usd: record.sale_price_usd ? Number.parseInt(record.sale_price_usd) : null,

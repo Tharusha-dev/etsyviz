@@ -164,6 +164,8 @@ export default function Categories() {
   const [totalRows, setTotalRows] = useState(0)
   const [processedRows, setProcessedRows] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
+  // Add sorting state
+  const [sorting, setSorting] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null)
 
   // Add state for pagination
   const [{ pageIndex, pageSize }, setPagination] = useState({
@@ -173,7 +175,7 @@ export default function Categories() {
 
   const { toast } = useToast()
 
-  // Fetch data function
+  // Fetch data function - update to include sorting
   const fetchData = async (start: number, size: number) => {
     try {
       const response = await fetch(`${API_URL}/get-rows`, {
@@ -185,6 +187,7 @@ export default function Categories() {
           table: 'categories',
           start,
           count: size,
+          sort: sorting // Pass sorting parameters to the API
         }),
       })
       if (!response.ok) throw new Error('Failed to fetch data')
@@ -225,7 +228,7 @@ export default function Categories() {
     onPaginationChange: setPagination,
   })
 
-  // Handle page changes
+  // Handle page changes - update to include sorting
   useEffect(() => {
     const loadPageData = async () => {
       setIsLoading(true)
@@ -235,7 +238,31 @@ export default function Categories() {
       setIsLoading(false)
     }
     loadPageData()
-  }, [pageIndex, pageSize])
+  }, [pageIndex, pageSize, sorting]) // Add sorting to dependency array
+
+  // Add sort handler function
+  const handleSort = (column: string) => {
+    setSorting(prev => {
+      // If already sorting by this column, toggle direction
+      if (prev?.column === column) {
+        return { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      // Default to descending for initial sort
+      return { column, direction: 'desc' };
+    });
+    // Reset to first page when sorting changes
+    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+  };
+
+  // Add sort indicator component
+  const SortIndicator = ({ column }: { column: string }) => {
+    if (sorting?.column !== column) return null;
+    return (
+      <span className="ml-1">
+        {sorting.direction === 'asc' ? '↑' : '↓'}
+      </span>
+    );
+  };
 
   const validateCSVColumns = (headers: string[]): boolean => {
     const requiredColumns = [
@@ -372,9 +399,8 @@ export default function Categories() {
 
   return (
     <div className="container">
-          <div className="flex justify-between mb-4">
-      <h1 className="text-[2rem] font-bold" style={{fontSize: "2rem"}}>Categories</h1>
-
+      <div className="flex justify-between mb-4">
+        <h1 className="text-[2rem] font-bold" style={{fontSize: "2rem"}}>Categories</h1>
         <SettingsDropdown />
       </div>
       {/* <Card>
@@ -403,7 +429,6 @@ export default function Categories() {
       </Card> */}
 
       <Card className="mt-5">
-    
         <CardContent className="p-0">
           <div className="rounded-md border">
             <Table>
@@ -412,12 +437,25 @@ export default function Categories() {
                   <TableRow key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
                       <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
+                        {header.isPlaceholder ? null : (
+                          <div 
+                            className={`flex items-center ${(header.id === 'store_reviews_number' || header.id === 'store_reviews_score') ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                            onClick={() => {
+                              if (header.id === 'store_reviews_number' || header.id === 'store_reviews_score') {
+                                handleSort(header.id);
+                              }
+                            }}
+                          >
+                            {flexRender(
                               header.column.columnDef.header,
                               header.getContext()
                             )}
+                            {/* Add sort indicators for sortable columns */}
+                            {(header.id === 'store_reviews_number' || header.id === 'store_reviews_score') && (
+                              <SortIndicator column={header.id} />
+                            )}
+                          </div>
+                        )}
                       </TableHead>
                     ))}
                   </TableRow>

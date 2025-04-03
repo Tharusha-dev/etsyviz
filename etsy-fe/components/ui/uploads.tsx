@@ -35,14 +35,38 @@ interface UploadHistory {
 
 const BATCH_SIZE = 5
 
-export default function Uploads() {
-  const [selectedType, setSelectedType] = useState<string>("product")
+interface UploadsProps {
+  uploadState: {
+    isUploading: boolean;
+    progress: number;
+    totalRows: number;
+    processedRows: number;
+  };
+  selectedType : any;
+  processFile : any;
+  setSelectedType: any;
+  uploadHistory:UploadHistory[];
+  setUploadHistory: any;
+
+  setUploadState: React.Dispatch<React.SetStateAction<{
+    isUploading: boolean;
+    progress: number;
+    totalRows: number;
+    processedRows: number;
+  }>>;
+}
+interface UploadHistory {
+  id: number
+  file_type: string
+  rows_processed: number
+  time_added: string
+  status: string
+  error_message: string | null
+}
+export default function Uploads({ uploadState, selectedType,processFile, setUploadHistory,uploadHistory,setSelectedType }: UploadsProps) {
+  // const [selectedType, setSelectedType] = useState<string>("product")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [progress, setProgress] = useState(0)
-  const [isUploading, setIsUploading] = useState(false)
-  const [totalRows, setTotalRows] = useState(0)
-  const [processedRows, setProcessedRows] = useState(0)
-  const [uploadHistory, setUploadHistory] = useState<UploadHistory[]>([])
+  // const [uploadHistory, setUploadHistory] = useState<UploadHistory[]>([])
   const { toast } = useToast()
 
   // Fetch upload history
@@ -61,145 +85,149 @@ export default function Uploads() {
     fetchHistory()
   }, [])
 
-  const validateCSVColumns = (headers: string[], type: string): boolean => {
-    const requiredColumns: Record<string, string[]> = {
-      product: ["product_id", "product_title"],
-      store: ["store_name", "store_url", "store_country"],
-      category: ["search_url", "category_tree", "product_url", "product_id"]
-    }
+  // const validateCSVColumns = (headers: string[], type: string): boolean => {
+  //   const requiredColumns: Record<string, string[]> = {
+  //     product: ["product_id", "product_title"],
+  //     store: ["store_name", "store_url", "store_country"],
+  //     category: ["search_url", "category_tree", "product_url", "product_id"]
+  //   }
 
-    const missingColumns = requiredColumns[type].filter(col => !headers.includes(col))
+  //   const missingColumns = requiredColumns[type].filter(col => !headers.includes(col))
     
-    if (missingColumns.length > 0) {
-      toast({
-        variant: "destructive",
-        title: "Invalid CSV Format",
-        description: `Missing required columns: ${missingColumns.join(", ")}`,
-      })
-      return false
-    }
+  //   if (missingColumns.length > 0) {
+  //     toast({
+  //       variant: "destructive",
+  //       title: "Invalid CSV Format",
+  //       description: `Missing required columns: ${missingColumns.join(", ")}`,
+  //     })
+  //     return false
+  //   }
     
-    return true
-  }
+  //   return true
+  // }
 
-  const processFile = async (file: File) => {
-    if (!selectedType) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please select a file type before uploading",
-      })
-      return
-    }
+  // const processFile = async (file: File) => {
+  //   if (!selectedType) {
+  //     toast({
+  //       variant: "destructive",
+  //       title: "Error",
+  //       description: "Please select a file type before uploading",
+  //     })
+  //     return
+  //   }
 
-    setIsUploading(true)
-    setProgress(0)
-    setProcessedRows(0)
+  //   setUploadState(prev => ({ ...prev, isUploading: true, progress: 0, processedRows: 0 }))
 
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string
-        parse(text, {
-          columns: true,
-          skip_empty_lines: true,
-          trim: true,
-        }, async (err, records) => {
-          if (err) {
-            await logUpload(selectedType, 0, 'failed', err.message)
-            toast({
-              variant: "destructive",
-              title: "CSV Parsing Error",
-              description: "Failed to parse the CSV file.",
-            })
-            setIsUploading(false)
-            return
-          }
+  //   const reader = new FileReader()
+  //   reader.onload = async (event) => {
+  //     try {
+  //       const text = event.target?.result as string
+  //       parse(text, {
+  //         columns: true,
+  //         skip_empty_lines: true,
+  //         trim: true,
+  //       }, async (err, records) => {
+  //         if (err) {
+  //           await logUpload(selectedType, 0, 'failed', err.message)
+  //           toast({
+  //             variant: "destructive",
+  //             title: "CSV Parsing Error",
+  //             description: "Failed to parse the CSV file.",
+  //           })
+  //           setUploadState(prev => ({ ...prev, isUploading: false }))
+  //           return
+  //         }
 
-          const headers = Object.keys(records[0] || {})
-          if (!validateCSVColumns(headers, selectedType)) {
-            await logUpload(selectedType, 0, 'failed', 'Invalid columns')
-            setIsUploading(false)
-            return
-          }
+  //         const headers = Object.keys(records[0] || {})
+  //         if (!validateCSVColumns(headers, selectedType)) {
+  //           await logUpload(selectedType, 0, 'failed', 'Invalid columns')
+  //           setUploadState(prev => ({ ...prev, isUploading: false }))
+  //           return
+  //         }
 
-          let batch = []
-          let rowCount = 0
-          const totalRows = records.length
-          setTotalRows(totalRows)
+  //         let batch = []
+  //         let rowCount = 0
+  //         const totalRows = records.length
+  //         setUploadState(prev => ({ ...prev, totalRows }))
 
-          for (const record of records) {
-            const transformedRecord = selectedType === "product" ? transformProduct(record) : selectedType === "store" ? transformStore(record) : transformCategory(record)
-            batch.push(transformedRecord)
-            rowCount++
+  //         for (const record of records) {
+  //           const transformedRecord = selectedType === "product" ? transformProduct(record) : selectedType === "store" ? transformStore(record) : transformCategory(record)
+  //           batch.push(transformedRecord)
+  //           rowCount++
 
-            if (batch.length === BATCH_SIZE) {
-              try {
-                await uploadBatch(batch, selectedType)
-                setProcessedRows(rowCount)
-                setProgress((rowCount / totalRows) * 100)
-                batch = []
-              } catch (error) {
-                console.error("Error uploading batch:", error)
-              }
-            }
-          }
+  //           if (batch.length === BATCH_SIZE) {
+  //             try {
+  //               await uploadBatch(batch, selectedType)
+  //               setUploadState(prev => ({
+  //                 ...prev,
+  //                 processedRows: rowCount,
+  //                 progress: (rowCount / totalRows) * 100
+  //               }))
+  //               batch = []
+  //             } catch (error) {
+  //               console.error("Error uploading batch:", error)
+  //             }
+  //           }
+  //         }
 
-          if (batch.length > 0) {
-            try {
-              await uploadBatch(batch, selectedType)
-              setProcessedRows(rowCount)
-              setProgress(100)
-            } catch (error) {
-              console.error("Error uploading final batch:", error)
-            }
-          }
+  //         if (batch.length > 0) {
+  //           try {
+  //             await uploadBatch(batch, selectedType)
+  //             setUploadState(prev => ({
+  //               ...prev,
+  //               processedRows: rowCount,
+  //               progress: 100
+  //             }))
+  //           } catch (error) {
+  //             console.error("Error uploading final batch:", error)
+  //           }
+  //         }
 
-          await logUpload(selectedType, rowCount, 'success')
-          await fetchHistory()
-          setIsUploading(false)
-        })
-      } catch (error) {
-        await logUpload(selectedType, 0, 'failed')
-        toast({
-          variant: "destructive",
-          title: "File Processing Error",
-          description: "Failed to process CSV file.",
-        })
-        setIsUploading(false)
-      }
-    }
+  //         await logUpload(selectedType, rowCount, 'success')
+  //         await fetchHistory()
+  //         setUploadState(prev => ({ ...prev, isUploading: false }))
+  //       })
+  //     } catch (error) {
+  //       await logUpload(selectedType, 0, 'failed')
+  //       toast({
+  //         variant: "destructive",
+  //         title: "File Processing Error",
+  //         description: "Failed to process CSV file.",
+  //       })
+  //       setUploadState(prev => ({ ...prev, isUploading: false }))
+  //     }
+  //   }
 
-    reader.readAsText(file)
-  }
+  //   reader.readAsText(file)
+  // }
 
-  const uploadBatch = async (batch: any[], type: string) => {
-    const endpoint = `${API_URL}/add-${type}-batch`
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(batch),
-    })
+  // const uploadBatch = async (batch: any[], type: string) => {
+  //   const endpoint = `${API_URL}/add-${type}-batch`
+  //   const response = await fetch(endpoint, {
+  //     method: "POST",
+  //     headers: { "Content-Type": "application/json" },
+  //     body: JSON.stringify(batch),
+  //   })
 
-    if (!response.ok) throw new Error("Failed to upload batch")
-  }
+  //   if (!response.ok) throw new Error("Failed to upload batch")
+  // }
 
-  const logUpload = async (fileType: string, rowsProcessed: number, status: string, errorMessage?: string) => {
-    try {
-      await fetch(`${API_URL}/upload-history`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file_type: fileType,
-          rows_processed: rowsProcessed,
-          status,
-          error_message: errorMessage
-        }),
-      })
-    } catch (error) {
-      console.error("Error logging upload:", error)
-    }
-  }
+  // const logUpload = async (fileType: string, rowsProcessed: number, status: string, errorMessage?: string) => {
+  //   try {
+  //     await fetch(`${API_URL}/upload-history`, {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({
+  //         file_type: fileType,
+  //         rows_processed: rowsProcessed,
+  //         status,
+  //         error_message: errorMessage
+  //       }),
+  //     })
+  //   } catch (error) {
+  //     console.error("Error logging upload:", error)
+  //   }
+  // }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -236,11 +264,11 @@ export default function Uploads() {
           <CardTitle>Upload Data</CardTitle>
         </CardHeader>
         <CardContent>
-          {isUploading && (
+          {uploadState.isUploading && (
             <div className="space-y-2 mb-4">
-              <Progress value={progress} className="w-full" />
+              <Progress value={uploadState.progress} className="w-full" />
               <p className="text-sm text-muted-foreground">
-                Processed {processedRows} of {totalRows} rows ({Math.round(progress)}%)
+                Processed {uploadState.processedRows} of {uploadState.totalRows} rows ({Math.round(uploadState.progress)}%)
               </p>
             </div>
           )}
@@ -266,7 +294,7 @@ export default function Uploads() {
             />
             <Button 
               onClick={handleUpload}
-              disabled={isUploading || !selectedFile}
+              disabled={uploadState.isUploading || !selectedFile}
             >
               Upload
             </Button>
@@ -320,7 +348,7 @@ function transformProduct(record: any) {
     last_24_hours: record.last_24_hours ? Number.parseInt(record.last_24_hours) : null,
     number_in_basket: record.number_in_basket ? Number.parseInt(record.number_in_basket) : null,
     product_reviews: record.product_reviews ? Number.parseInt(record.product_reviews) : null,
-    ratingValue: record.ratingValue ? Number.parseFloat(record.ratingValue) : null,
+    rating_value: record.rating_value ? Number.parseFloat(record.rating_value) : null,
     number_of_favourties: record.number_of_favourties ? Number.parseInt(record.number_of_favourties) : null,
     price_usd: record.price_usd ? Number.parseInt(record.price_usd) : null,
     sale_price_usd: record.sale_price_usd ? Number.parseInt(record.sale_price_usd) : null,
