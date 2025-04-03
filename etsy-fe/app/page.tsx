@@ -130,7 +130,7 @@ export default function Home() {
           // Process in chunks of BATCH_SIZE
           for (let i = 0; i < totalRows; i += BATCH_SIZE) {
             const batchRecords = records.slice(i, i + BATCH_SIZE)
-            const batch = batchRecords.map(record => {
+            const batch = batchRecords.map((record: any) => {
               return selectedType === "product" 
                 ? transformProduct(record) 
                 : selectedType === "store" 
